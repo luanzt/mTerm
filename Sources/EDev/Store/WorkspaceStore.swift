@@ -101,6 +101,10 @@ final class WorkspaceStore: ObservableObject {
         if grid.isEmpty, let fallback = selectedSessionID {
             grid = PaneGrid.single(fallback)
         }
+        if let sel = selectedSessionID, !grid.paneIDs.contains(sel),
+           let firstInGrid = grid.paneIDs.first {
+            selectedSessionID = firstInGrid
+        }
         persist()
     }
 

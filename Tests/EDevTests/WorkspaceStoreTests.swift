@@ -27,6 +27,23 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.grid.paneIDs.contains(b))
     }
 
+    func testClosingSelectedKeepsSelectionInsideGrid() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()               // b: background session, not in grid
+        store.createSession()
+        let c = store.sessions[2].id
+        store.openSingle(a)
+        store.place(c, onPaneWith: a, zone: .right)   // grid [a][c], selected c
+        XCTAssertEqual(store.selectedSessionID, c)
+
+        store.close(store.session(for: c)!)           // grid becomes [a]
+        // selection must follow a displayed pane, not the background session
+        XCTAssertNotNil(store.selectedSessionID)
+        XCTAssertTrue(store.grid.paneIDs.contains(store.selectedSessionID!))
+        XCTAssertEqual(store.selectedSessionID, a)
+    }
+
     func testSessionsAreNotPersistedAcrossStoreInit() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let store1 = WorkspaceStore(defaults: defaults)
