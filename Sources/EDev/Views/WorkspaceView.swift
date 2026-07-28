@@ -175,6 +175,7 @@ private struct TerminalDeck: View {
                 rowDividers(in: proxy.size)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
+            .coordinateSpace(name: "deck")
         }
         .background(Color.black)
     }
@@ -210,7 +211,7 @@ private struct TerminalDeck: View {
                 .fill(Color(nsColor: .separatorColor))
                 .frame(width: 5, height: size.height)
                 .offset(x: x - 2.5)
-                .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
                     let pairStart = cumulativeWidth(upTo: i, in: size)
                     let pairWidth = (columns[i].widthFraction + columns[i + 1].widthFraction) * size.width
                     guard pairWidth > 0 else { return }
@@ -232,7 +233,7 @@ private struct TerminalDeck: View {
                     .fill(Color(nsColor: .separatorColor))
                     .frame(width: w, height: 5)
                     .offset(x: x, y: y - 2.5)
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
                         guard size.height > 0 else { return }
                         workspace.resizeRow(columnIndex: i, topFraction: value.location.y / size.height)
                     })
