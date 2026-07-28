@@ -12,7 +12,8 @@ struct TerminalHostView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let terminal = LocalProcessTerminalView(frame: .zero)
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        terminal.font = terminalFont
+        terminal.caretColor = .white
         terminal.wantsLayer = true
         terminal.layer?.backgroundColor = NSColor.black.cgColor
 
@@ -24,6 +25,13 @@ struct TerminalHostView: NSViewRepresentable {
             currentDirectory: session.workingDirectory)
         context.coordinator.terminal = terminal
         return terminal
+    }
+
+    private var terminalFont: NSFont {
+        ["MesloLGS NF", "MesloLGS NF Regular", "MesloLGSNF-Regular"]
+            .lazy
+            .compactMap { NSFont(name: $0, size: 14) }
+            .first ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {

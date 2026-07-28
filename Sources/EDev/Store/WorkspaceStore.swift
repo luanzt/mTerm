@@ -3,18 +3,42 @@ import Combine
 import CoreGraphics
 import Foundation
 
+enum TerminalDropPosition {
+    case left
+    case right
+    case top
+    case bottom
+    case center
+
+    var splitAxis: SplitAxis? {
+        switch self {
+        case .left, .right: .horizontal
+        case .top, .bottom: .vertical
+        case .center: nil
+        }
+    }
+}
+
+enum SplitAxis: Equatable {
+    case horizontal
+    case vertical
+}
+
 @MainActor
 final class WorkspaceStore: ObservableObject {
     @Published private(set) var sessions: [SessionRecord]
     @Published private(set) var workspaces: [WorkspaceFolder]
     @Published var selectedSessionID: SessionRecord.ID?
+    @Published var draggedSessionID: SessionRecord.ID?
     @Published var isSidebarVisible = true
     @Published private(set) var splitSessionIDs: [SessionRecord.ID] = []
     @Published private(set) var splitFraction: CGFloat = 0.5
+    @Published private(set) var splitAxis: SplitAxis = .horizontal
 
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
     private let defaults: UserDefaults
+    private var dragEndMonitor: Any?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -39,6 +63,31 @@ final class WorkspaceStore: ObservableObject {
         sessions.append(session)
         selectedSessionID = session.id
         persist()
+    }
+
+    func beginDragging(_ sessionID: SessionRecord.ID) {
+        finishDragging()
+        draggedSessionID = sessionID
+        dragEndMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseUp, .keyDown]
+        ) { [weak self] event in
+            let didReleaseMouse = event.type == .leftMouseUp
+            let didPressEscape = event.type == .keyDown && event.keyCode == 53
+            guard didReleaseMouse || didPressEscape else { return event }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                self?.finishDragging()
+            }
+            return event
+        }
+    }
+
+    func finishDragging() {
+        if let dragEndMonitor {
+            NSEvent.removeMonitor(dragEndMonitor)
+            self.dragEndMonitor = nil
+        }
+        draggedSessionID = nil
     }
 
     func chooseWorkspace() {
@@ -98,8 +147,40 @@ final class WorkspaceStore: ObservableObject {
                                            workspaceID: selectedSession.workspaceID)
         sessions.append(session)
         splitSessionIDs = [selectedSession.id, session.id]
+        splitAxis = .horizontal
         selectedSessionID = session.id
         persist()
+    }
+
+    func place(_ sessionID: SessionRecord.ID,
+               relativeTo targetID: SessionRecord.ID,
+               at position: TerminalDropPosition) {
+        guard sessionID != targetID,
+              sessions.contains(where: { $0.id == sessionID }),
+              sessions.contains(where: { $0.id == targetID }) else { return }
+
+        guard let axis = position.splitAxis else {
+            selectedSessionID = sessionID
+            splitSessionIDs = []
+            return
+        }
+
+        splitAxis = axis
+        var ids = splitSessionIDs.isEmpty ? [targetID] : splitSessionIDs
+        ids.removeAll { $0 == sessionID }
+        guard let targetIndex = ids.firstIndex(of: targetID) else { return }
+        let insertionIndex: Int
+        switch position {
+        case .left, .top:
+            insertionIndex = targetIndex
+        case .right, .bottom:
+            insertionIndex = targetIndex + 1
+        case .center:
+            return
+        }
+        ids.insert(sessionID, at: insertionIndex)
+        splitSessionIDs = ids
+        selectedSessionID = sessionID
     }
 
     func focusOnly(_ session: SessionRecord) {
