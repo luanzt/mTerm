@@ -11,6 +11,9 @@ final class WorkspaceStore: ObservableObject {
     @Published var draggedSessionID: SessionRecord.ID?
     @Published var isSidebarVisible = true
     @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
+    /// Session shown in the pane the cursor most recently hovered. Used as the
+    /// target pane when opening a session or creating a terminal from the sidebar.
+    @Published var hoveredSessionID: SessionRecord.ID?
 
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
@@ -38,7 +41,7 @@ final class WorkspaceStore: ObservableObject {
     func createSession() {
         let session = makeSession()
         sessions.append(session)
-        openSingle(session.id)
+        showInActivePane(session.id)
         persist()
     }
 
@@ -86,7 +89,7 @@ final class WorkspaceStore: ObservableObject {
     func createSession(in workspace: WorkspaceFolder) {
         let session = makeSession(workingDirectory: workspace.path, workspaceID: workspace.id)
         sessions.append(session)
-        openSingle(session.id)
+        showInActivePane(session.id)
         persist()
     }
 
@@ -132,6 +135,33 @@ final class WorkspaceStore: ObservableObject {
         guard sessions.contains(where: { $0.id == id }) else { return }
         grid = PaneGrid.single(id)
         selectedSessionID = id
+    }
+
+    /// The pane to target for sidebar actions: the pane under the cursor, else
+    /// the focused pane, else the first pane. Nil only when the grid is empty.
+    private var activePaneSessionID: SessionRecord.ID? {
+        if let hovered = hoveredSessionID, grid.paneIDs.contains(hovered) { return hovered }
+        if let selected = selectedSessionID, grid.paneIDs.contains(selected) { return selected }
+        return grid.paneIDs.first
+    }
+
+    /// Show `id` in the active pane (the pane under the cursor), replacing whatever
+    /// it currently shows — instead of collapsing to a single view. Falls back to a
+    /// single-pane view when the grid is empty.
+    private func showInActivePane(_ id: SessionRecord.ID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        // Already visible in some pane: just focus it, don't move it (moving would
+        // collapse its current pane).
+        if grid.paneIDs.contains(id) { selectedSessionID = id; return }
+        guard let target = activePaneSessionID else { openSingle(id); return }
+        grid.place(id, onPaneWith: target, zone: .center)
+        selectedSessionID = id
+    }
+
+    /// Sidebar tap: open `id` in the pane under the cursor without leaving the
+    /// current multi-pane layout.
+    func openInActivePane(_ id: SessionRecord.ID) {
+        showInActivePane(id)
     }
 
     func allowedZones(forPaneWith id: SessionRecord.ID) -> Set<DropZone> {

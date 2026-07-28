@@ -142,7 +142,7 @@ private struct SessionSidebarRow: View {
         .padding(.leading, isNested ? 12 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
-            workspace.openSingle(session.id)
+            workspace.openInActivePane(session.id)
         }
         .onDrag {
             workspace.beginDragging(session.id)
@@ -333,6 +333,9 @@ private struct TerminalPane: View {
                 .onChange(of: workspace.draggedSessionID) {
                     if workspace.draggedSessionID == nil { dropZone = nil }
                 }
+            }
+            .onHover { hovering in
+                if hovering { workspace.hoveredSessionID = session.id }
             }
         }
     }

@@ -44,6 +44,65 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSessionID, a)
     }
 
+    func testOpenInActivePaneReplacesHoveredPaneWithoutCollapsing() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.createSession()
+        let c = store.sessions[2].id
+        // Build two columns: [b][c]
+        store.openSingle(b)
+        store.place(c, onPaneWith: b, zone: .right)
+        XCTAssertEqual(store.grid.columns.count, 2)
+
+        // Hover the left column (b) and open background session a from the sidebar.
+        store.hoveredSessionID = b
+        store.openInActivePane(a)
+
+        XCTAssertEqual(store.grid.columns.count, 2)          // did not collapse to single view
+        XCTAssertTrue(store.grid.paneIDs.contains(a))        // a replaced b in the hovered pane
+        XCTAssertTrue(store.grid.paneIDs.contains(c))        // other pane untouched
+        XCTAssertFalse(store.grid.paneIDs.contains(b))
+        XCTAssertEqual(store.grid.columns[0].panes, [a])     // left column now shows a
+        XCTAssertEqual(store.selectedSessionID, a)
+    }
+
+    func testCreateSessionReplacesActivePaneNotSingleView() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)          // [a][b]
+        store.hoveredSessionID = a
+
+        store.createSession()                                // new terminal into hovered pane
+        let created = store.selectedSessionID
+
+        XCTAssertEqual(store.grid.columns.count, 2)          // still two panes
+        XCTAssertTrue(store.grid.paneIDs.contains(b))        // other pane kept
+        XCTAssertFalse(store.grid.paneIDs.contains(a))       // a replaced by the new terminal
+        XCTAssertEqual(store.grid.columns[0].panes, [created!])
+    }
+
+    func testOpenInActivePaneFocusesAlreadyVisibleSession() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)          // [a][b]
+        store.hoveredSessionID = a
+
+        store.openInActivePane(b)                            // b already visible
+
+        XCTAssertEqual(store.grid.columns.count, 2)          // unchanged layout
+        XCTAssertEqual(store.grid.columns[0].panes, [a])
+        XCTAssertEqual(store.grid.columns[1].panes, [b])
+        XCTAssertEqual(store.selectedSessionID, b)           // just focused
+    }
+
     func testSessionsAreNotPersistedAcrossStoreInit() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let store1 = WorkspaceStore(defaults: defaults)
