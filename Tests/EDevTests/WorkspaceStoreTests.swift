@@ -14,27 +14,29 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSessionID, store.sessions[0].id)
     }
 
-    func testSplitCreatesAdjacentSessionInTheSameWorkingDirectory() {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let store = WorkspaceStore(defaults: defaults)
-        let original = store.sessions[0]
-
-        store.splitSelectedSession()
-
-        XCTAssertEqual(store.displayedSessions.count, 2)
-        XCTAssertEqual(store.displayedSessions[0].id, original.id)
-        XCTAssertEqual(store.displayedSessions[1].workingDirectory, original.workingDirectory)
-        XCTAssertEqual(store.selectedSessionID, store.displayedSessions[1].id)
+    func testCloseRemovesPaneFromGrid() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)
+        XCTAssertEqual(store.grid.columns.count, 2)
+        store.close(store.session(for: b)!)
+        XCTAssertEqual(store.grid.columns.count, 1)
+        XCTAssertFalse(store.grid.paneIDs.contains(b))
     }
 
-    func testSplitResizeIsClampedToUsableBounds() {
+    func testSessionsAreNotPersistedAcrossStoreInit() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let store = WorkspaceStore(defaults: defaults)
+        let store1 = WorkspaceStore(defaults: defaults)
+        store1.createSession()
+        store1.createSession()
+        XCTAssertEqual(store1.sessions.count, 3)
 
-        store.resizeSplit(to: 0.01)
-        XCTAssertEqual(store.splitFraction, 0.2)
-        store.resizeSplit(to: 0.99)
-        XCTAssertEqual(store.splitFraction, 0.8)
+        let store2 = WorkspaceStore(defaults: defaults)
+        XCTAssertEqual(store2.sessions.count, 1)          // fresh
+        XCTAssertEqual(store2.grid.columns.count, 1)
     }
 
     func testToggleSidebarChangesVisibility() {

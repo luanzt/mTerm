@@ -3,27 +3,6 @@ import Combine
 import CoreGraphics
 import Foundation
 
-enum TerminalDropPosition {
-    case left
-    case right
-    case top
-    case bottom
-    case center
-
-    var splitAxis: SplitAxis? {
-        switch self {
-        case .left, .right: .horizontal
-        case .top, .bottom: .vertical
-        case .center: nil
-        }
-    }
-}
-
-enum SplitAxis: Equatable {
-    case horizontal
-    case vertical
-}
-
 @MainActor
 final class WorkspaceStore: ObservableObject {
     @Published private(set) var sessions: [SessionRecord]
@@ -31,9 +10,6 @@ final class WorkspaceStore: ObservableObject {
     @Published var selectedSessionID: SessionRecord.ID?
     @Published var draggedSessionID: SessionRecord.ID?
     @Published var isSidebarVisible = true
-    @Published private(set) var splitSessionIDs: [SessionRecord.ID] = []
-    @Published private(set) var splitFraction: CGFloat = 0.5
-    @Published private(set) var splitAxis: SplitAxis = .horizontal
     @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
 
     private let sessionsKey = "edev.workspace.sessions"
@@ -43,8 +19,8 @@ final class WorkspaceStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        sessions = Self.decode([SessionRecord].self, from: defaults, key: sessionsKey)
-            ?? [SessionRecord.shell()]
+        sessions = [SessionRecord.shell()]
+        defaults.removeObject(forKey: sessionsKey)   // dọn state cũ nếu có
         workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
         defaults.removeObject(forKey: "edev.workspace.history")
         selectedSessionID = sessions.first?.id
@@ -56,14 +32,13 @@ final class WorkspaceStore: ObservableObject {
     }
 
     var displayedSessions: [SessionRecord] {
-        let ids = splitSessionIDs.isEmpty ? [selectedSessionID].compactMap { $0 } : splitSessionIDs
-        return ids.compactMap { id in sessions.first { $0.id == id } }
+        grid.paneIDs.compactMap { id in sessions.first { $0.id == id } }
     }
 
     func createSession() {
         let session = makeSession()
         sessions.append(session)
-        selectedSessionID = session.id
+        openSingle(session.id)
         persist()
     }
 
@@ -111,21 +86,20 @@ final class WorkspaceStore: ObservableObject {
     func createSession(in workspace: WorkspaceFolder) {
         let session = makeSession(workingDirectory: workspace.path, workspaceID: workspace.id)
         sessions.append(session)
-        selectedSessionID = session.id
+        openSingle(session.id)
         persist()
     }
 
     func close(_ session: SessionRecord) {
         guard let index = sessions.firstIndex(of: session) else { return }
         sessions.remove(at: index)
+        grid.remove(session.id)
         if selectedSessionID == session.id {
             selectedSessionID = sessions.indices.contains(index)
-                ? sessions[index].id
-                : sessions.last?.id
+                ? sessions[index].id : sessions.last?.id
         }
-        splitSessionIDs.removeAll { $0 == session.id }
-        if splitSessionIDs.count < 2 {
-            splitSessionIDs = []
+        if grid.isEmpty, let fallback = selectedSessionID {
+            grid = PaneGrid.single(fallback)
         }
         persist()
     }
@@ -142,64 +116,8 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    func splitSelectedSession() {
-        guard let selectedSession else { return }
-        let session = SessionRecord.shell(title: "Terminal \(sessions.count + 1)",
-                                           workingDirectory: selectedSession.workingDirectory,
-                                           workspaceID: selectedSession.workspaceID)
-        sessions.append(session)
-        splitSessionIDs = [selectedSession.id, session.id]
-        splitAxis = .horizontal
-        selectedSessionID = session.id
-        persist()
-    }
-
-    func place(_ sessionID: SessionRecord.ID,
-               relativeTo targetID: SessionRecord.ID,
-               at position: TerminalDropPosition) {
-        guard sessionID != targetID,
-              sessions.contains(where: { $0.id == sessionID }),
-              sessions.contains(where: { $0.id == targetID }) else { return }
-
-        guard let axis = position.splitAxis else {
-            selectedSessionID = sessionID
-            splitSessionIDs = []
-            return
-        }
-
-        splitAxis = axis
-        var ids = splitSessionIDs.isEmpty ? [targetID] : splitSessionIDs
-        ids.removeAll { $0 == sessionID }
-        guard let targetIndex = ids.firstIndex(of: targetID) else { return }
-        let insertionIndex: Int
-        switch position {
-        case .left, .top:
-            insertionIndex = targetIndex
-        case .right, .bottom:
-            insertionIndex = targetIndex + 1
-        case .center:
-            return
-        }
-        ids.insert(sessionID, at: insertionIndex)
-        splitSessionIDs = ids
-        selectedSessionID = sessionID
-    }
-
-    func focusOnly(_ session: SessionRecord) {
-        selectedSessionID = session.id
-        splitSessionIDs = []
-    }
-
-    func closeSplit() {
-        splitSessionIDs = []
-    }
-
     func toggleSidebar() {
         isSidebarVisible.toggle()
-    }
-
-    func resizeSplit(to fraction: CGFloat) {
-        splitFraction = min(max(fraction, 0.2), 0.8)
     }
 
     func session(for id: SessionRecord.ID) -> SessionRecord? {
@@ -236,7 +154,6 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func persist() {
-        Self.encode(sessions, to: defaults, key: sessionsKey)
         Self.encode(workspaces, to: defaults, key: workspacesKey)
     }
 
