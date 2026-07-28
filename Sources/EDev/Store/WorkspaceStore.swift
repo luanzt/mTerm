@@ -34,6 +34,7 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var splitSessionIDs: [SessionRecord.ID] = []
     @Published private(set) var splitFraction: CGFloat = 0.5
     @Published private(set) var splitAxis: SplitAxis = .horizontal
+    @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
 
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
@@ -47,6 +48,7 @@ final class WorkspaceStore: ObservableObject {
         workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
         defaults.removeObject(forKey: "edev.workspace.history")
         selectedSessionID = sessions.first?.id
+        grid = selectedSessionID.map(PaneGrid.single) ?? PaneGrid(columns: [])
     }
 
     var selectedSession: SessionRecord? {
@@ -198,6 +200,39 @@ final class WorkspaceStore: ObservableObject {
 
     func resizeSplit(to fraction: CGFloat) {
         splitFraction = min(max(fraction, 0.2), 0.8)
+    }
+
+    func session(for id: SessionRecord.ID) -> SessionRecord? {
+        sessions.first { $0.id == id }
+    }
+
+    func openSingle(_ id: SessionRecord.ID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        grid = PaneGrid.single(id)
+        selectedSessionID = id
+    }
+
+    func allowedZones(forPaneWith id: SessionRecord.ID) -> Set<DropZone> {
+        grid.allowedZones(forPaneWith: id)
+    }
+
+    func place(_ dragged: SessionRecord.ID,
+               onPaneWith target: SessionRecord.ID,
+               zone: DropZone) {
+        guard sessions.contains(where: { $0.id == dragged }),
+              sessions.contains(where: { $0.id == target }) else { return }
+        grid.place(dragged, onPaneWith: target, zone: zone)
+        if grid.paneIDs.contains(dragged) {
+            selectedSessionID = dragged
+        }
+    }
+
+    func resizeColumn(pairLeadingIndex index: Int, leadingFraction fraction: CGFloat) {
+        grid.resizeColumn(pairLeadingIndex: index, leadingFraction: fraction)
+    }
+
+    func resizeRow(columnIndex index: Int, topFraction fraction: CGFloat) {
+        grid.resizeRow(columnIndex: index, topFraction: fraction)
     }
 
     private func persist() {

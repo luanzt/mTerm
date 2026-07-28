@@ -65,4 +65,28 @@ final class WorkspaceStoreTests: XCTestCase {
 
         XCTAssertNil(store.selectedSession?.workspaceID)
     }
+
+    func testStoreStartsWithSinglePaneGrid() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        XCTAssertEqual(store.grid.columns.count, 1)
+        XCTAssertEqual(store.grid.paneIDs, [store.sessions[0].id])
+    }
+
+    func testPlaceRightAddsColumnAndSelectsDragged() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let first = store.sessions[0].id
+        store.createSession()
+        let second = store.sessions[1].id
+        store.openSingle(first)
+        store.place(second, onPaneWith: first, zone: .right)
+        XCTAssertEqual(store.grid.columns.count, 2)
+        XCTAssertEqual(store.selectedSessionID, second)
+    }
+
+    func testAllowedZonesReflectGrid() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        XCTAssertEqual(store.allowedZones(forPaneWith: a),
+                       [.center, .left, .right, .top, .bottom])
+    }
 }
