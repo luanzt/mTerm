@@ -321,6 +321,9 @@ private struct TerminalPane: View {
                     }
                 }
                 .contentShape(Rectangle())
+                // Only intercept mouse events while a session is being dragged;
+                // otherwise let clicks fall through so the terminal can focus.
+                .allowsHitTesting(workspace.draggedSessionID != nil)
                 .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
                     targetSessionID: session.id,
                     size: proxy.size,
