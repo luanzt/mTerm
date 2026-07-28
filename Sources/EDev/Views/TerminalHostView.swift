@@ -5,6 +5,7 @@ import SwiftUI
 struct TerminalHostView: NSViewRepresentable {
     let session: SessionRecord
     let isVisible: Bool
+    let isFocused: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -58,6 +59,14 @@ struct TerminalHostView: NSViewRepresentable {
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
+
+        // Give keyboard focus to the selected pane's terminal so typing works
+        // right after picking a session in the sidebar — without stealing focus
+        // while the user is already typing in it (skip when it is already first
+        // responder).
+        if isFocused, isVisible, let window = nsView.window, window.firstResponder !== nsView {
+            window.makeFirstResponder(nsView)
+        }
     }
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {

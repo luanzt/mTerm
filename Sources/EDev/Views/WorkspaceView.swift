@@ -308,7 +308,9 @@ private struct TerminalPane: View {
                 .frame(height: 34)
                 .background(Color(nsColor: .controlBackgroundColor))
 
-                TerminalHostView(session: session, isVisible: isVisible)
+                TerminalHostView(session: session,
+                                 isVisible: isVisible,
+                                 isFocused: session.id == workspace.selectedSessionID)
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 10)
