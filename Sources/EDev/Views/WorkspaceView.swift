@@ -173,11 +173,34 @@ private struct TerminalDeck: View {
                 }
                 columnDividers(in: proxy.size)
                 rowDividers(in: proxy.size)
+                if workspace.grid.isEmpty {
+                    emptyState
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
             .coordinateSpace(name: "deck")
         }
         .background(Color.black)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "terminal")
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(.secondary)
+            Text("No terminals open")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Button {
+                workspace.createSession()
+            } label: {
+                Label("New terminal", systemImage: "plus")
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+        }
     }
 
     // Rect off-screen cho session không nằm trong grid (giữ process sống).
@@ -394,13 +417,10 @@ private struct TerminalPaneDropDelegate: DropDelegate {
 
     private func update(_ info: DropInfo) {
         guard let dragged = workspace.draggedSessionID else { dropZone = nil; return }
-        let allowed = workspace.allowedZones(forPaneWith: targetSessionID)
-        // Dragging the pane's own session onto its own center is a no-op: hide the preview.
-        if dragged == targetSessionID {
-            dropZone = zone(for: info.location) == .center ? nil : filtered(info, allowed)
-        } else {
-            dropZone = filtered(info, allowed)
-        }
+        // Dropping a pane's own session back onto that pane is a no-op in every
+        // zone (guarded in PaneGrid.place), so never show a preview for it.
+        guard dragged != targetSessionID else { dropZone = nil; return }
+        dropZone = filtered(info, workspace.allowedZones(forPaneWith: targetSessionID))
     }
 
     private func filtered(_ info: DropInfo, _ allowed: Set<DropZone>) -> DropZone? {
