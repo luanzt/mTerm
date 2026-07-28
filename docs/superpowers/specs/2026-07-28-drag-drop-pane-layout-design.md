@@ -45,18 +45,18 @@ Thay 3 field phẳng hiện tại (`splitSessionIDs`, `splitFraction`, `splitAxi
 trong `WorkspaceStore` bằng một cấu trúc lồng:
 
 ```swift
-struct PaneGrid: Codable, Equatable {
+struct PaneGrid: Equatable {
     var columns: [GridColumn]           // 1...3
 }
 
-struct GridColumn: Codable, Equatable {
+struct GridColumn: Equatable {
     var panes: [SessionRecord.ID]       // 1 hoặc 2 (index 0 = trên, 1 = dưới)
     var widthFraction: CGFloat          // bề rộng tương đối, các cột cộng lại = 1
     var rowFraction: CGFloat            // chiều cao pane trên (mặc định 0.5)
 }
 ```
 
-`PaneGrid`/`GridColumn` là `Codable` để persist (xem "Persistence").
+`PaneGrid` là in-memory only (không persist — xem "Persistence").
 
 - `PaneGrid` là source-of-truth cho những gì deck đang hiển thị.
 - `displayedSessions` = flatten `columns` → `panes` theo thứ tự.
@@ -132,17 +132,16 @@ Mỗi `TerminalPane` có `onDrop` với delegate riêng:
 - `TerminalHostView` (SwiftTerm host).
 - `SessionRecord`, `WorkspaceFolder`.
 - Drag-source ở sidebar (`SessionSidebarRow.onDrag` + `beginDragging`).
-- Persistence keys hiện có cho sessions/workspaces.
+- Persistence của `workspaces` (thư mục đã mở) — vẫn giữ nguyên.
 
 ## Persistence
 
-- Persist `grid` cùng cơ chế `UserDefaults` + `Codable` như `sessions`/`workspaces`
-  (key mới, vd `edev.workspace.grid`), gọi trong `persist()` sau mỗi `place` /
-  resize / tap.
-- Khi khởi động: decode grid; **lọc bỏ** mọi `SessionRecord.ID` không còn tồn tại
-  trong `sessions` (session đã bị đóng). Nếu sau khi lọc một cột rỗng → xoá cột;
-  nếu grid rỗng → fallback về single-view của session đầu tiên.
-- Chuẩn hoá lại `widthFraction` sau khi lọc để tổng = 1.
+- **Sessions và grid KHÔNG persist.** Tắt hẳn app → xoá toàn bộ session và
+  layout. Mở lại app luôn bắt đầu **fresh với 1 session mới** (single-view).
+- Đây là thay đổi so với hiện tại: bỏ đọc/ghi key `edev.workspace.sessions`
+  (bỏ luôn nhánh decode sessions trong `init`, không gọi encode sessions trong
+  `persist()`). Grid không có key persist nào.
+- `workspaces` (danh sách thư mục đã mở) vẫn persist như cũ.
 
 ## Testing
 
@@ -156,9 +155,8 @@ Unit test `WorkspaceStore` (thuần logic, không UI):
 - Move: drag session từ cột A sang cột B → biến mất ở A; nếu A rỗng → xoá cột A.
 - Drop lên chính nó → no-op.
 - `resizeColumn` / `resizeRow` clamp đúng biên.
-- Persistence: encode grid rồi khởi tạo store mới từ cùng `UserDefaults` →
-  khôi phục đúng layout; nếu một session ID đã bị xoá → lọc bỏ, cột rỗng bị xoá,
-  fraction chuẩn hoá lại.
+- No-persist: khởi tạo store mới từ cùng `UserDefaults` (kể cả khi đã có key
+  sessions cũ) → luôn fresh 1 session, grid single-view.
 
 ## Out of scope (phase này)
 
