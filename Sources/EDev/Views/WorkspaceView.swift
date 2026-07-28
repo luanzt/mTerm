@@ -250,7 +250,7 @@ private struct TerminalPane: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     let session: SessionRecord
     let isVisible: Bool
-    @State private var dropPosition: TerminalDropPosition?
+    @State private var dropZone: DropZone?
 
     var body: some View {
         GeometryReader { proxy in
@@ -293,51 +293,36 @@ private struct TerminalPane: View {
             .overlay {
                 ZStack {
                     Color.clear
-                    if let dropPosition {
-                        TerminalDropPreview(position: dropPosition, size: proxy.size)
+                    if let dropZone {
+                        TerminalDropPreview(zone: dropZone, size: proxy.size)
                     }
                 }
                 .contentShape(Rectangle())
-            .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
-                targetSessionID: session.id,
-                size: proxy.size,
-                dropPosition: $dropPosition,
-                workspace: workspace))
-            .onChange(of: workspace.grid) {
-                dropPosition = nil
-            }
-            .onChange(of: workspace.draggedSessionID) {
-                if workspace.draggedSessionID == nil {
-                    dropPosition = nil
+                .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
+                    targetSessionID: session.id,
+                    size: proxy.size,
+                    dropZone: $dropZone,
+                    workspace: workspace))
+                .onChange(of: workspace.grid) { dropZone = nil }
+                .onChange(of: workspace.draggedSessionID) {
+                    if workspace.draggedSessionID == nil { dropZone = nil }
                 }
             }
-        }
         }
     }
 }
 
 private struct TerminalDropPreview: View {
-    let position: TerminalDropPosition
+    let zone: DropZone
     let size: CGSize
 
     var body: some View {
         let rect = previewRect
         ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.black.opacity(0.38))
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.orange, lineWidth: 2)
-
-            if position == .center {
-                actionBadge("Open here", emphasized: true)
-            } else {
-                VStack(spacing: 22) {
-                    actionBadge("Open in split", emphasized: false)
-                    actionBadge("Add split", emphasized: true)
-                }
-            }
+            RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 10).fill(.black.opacity(0.38))
+            RoundedRectangle(cornerRadius: 10).stroke(Color.orange, lineWidth: 2)
+            badge(zone == .center ? "Open here" : "Split")
         }
         .frame(width: rect.width, height: rect.height)
         .position(x: rect.midX, y: rect.midY)
@@ -345,44 +330,37 @@ private struct TerminalDropPreview: View {
     }
 
     private var previewRect: CGRect {
-        let inset: CGFloat = 6
-        let gap: CGFloat = 3
-        switch position {
+        let inset: CGFloat = 6, gap: CGFloat = 3
+        switch zone {
         case .left:
-            return CGRect(x: inset,
-                          y: inset,
+            return CGRect(x: inset, y: inset,
                           width: max(0, size.width / 2 - inset - gap),
                           height: max(0, size.height - inset * 2))
         case .right:
-            return CGRect(x: size.width / 2 + gap,
-                          y: inset,
+            return CGRect(x: size.width / 2 + gap, y: inset,
                           width: max(0, size.width / 2 - inset - gap),
                           height: max(0, size.height - inset * 2))
         case .top:
-            return CGRect(x: inset,
-                          y: inset,
+            return CGRect(x: inset, y: inset,
                           width: max(0, size.width - inset * 2),
                           height: max(0, size.height / 2 - inset - gap))
         case .bottom:
-            return CGRect(x: inset,
-                          y: size.height / 2 + gap,
+            return CGRect(x: inset, y: size.height / 2 + gap,
                           width: max(0, size.width - inset * 2),
                           height: max(0, size.height / 2 - inset - gap))
         case .center:
-            return CGRect(x: inset,
-                          y: inset,
+            return CGRect(x: inset, y: inset,
                           width: max(0, size.width - inset * 2),
                           height: max(0, size.height - inset * 2))
         }
     }
 
-    private func actionBadge(_ title: String, emphasized: Bool) -> some View {
+    private func badge(_ title: String) -> some View {
         Text(title)
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(emphasized ? .white : .primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(emphasized ? Color.orange : Color.black.opacity(0.68))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Color.orange)
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
     }
@@ -391,55 +369,50 @@ private struct TerminalDropPreview: View {
 private struct TerminalPaneDropDelegate: DropDelegate {
     let targetSessionID: SessionRecord.ID
     let size: CGSize
-    @Binding var dropPosition: TerminalDropPosition?
+    @Binding var dropZone: DropZone?
     let workspace: WorkspaceStore
 
-    func dropEntered(info: DropInfo) {
-        guard workspace.draggedSessionID != targetSessionID else {
-            dropPosition = nil
-            return
-        }
-        dropPosition = position(for: info.location)
-    }
+    func dropEntered(info: DropInfo) { update(info) }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard workspace.draggedSessionID != targetSessionID else {
-            dropPosition = nil
-            return DropProposal(operation: .cancel)
-        }
-        dropPosition = position(for: info.location)
-        return DropProposal(operation: .copy)
+        update(info)
+        return DropProposal(operation: dropZone == nil ? .cancel : .copy)
     }
 
-    func dropExited(info: DropInfo) {
-        dropPosition = nil
-    }
+    func dropExited(info: DropInfo) { dropZone = nil }
 
     func performDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.text]),
-              let sessionID = workspace.draggedSessionID,
-              sessionID != targetSessionID,
-              let position = dropPosition else {
-            dropPosition = nil
-            workspace.finishDragging()
+        defer { workspace.finishDragging() }
+        guard let dragged = workspace.draggedSessionID, let zone = dropZone else {
+            dropZone = nil
             return false
         }
-        workspace.place(sessionID, relativeTo: targetSessionID, at: position)
-        dropPosition = nil
-        workspace.finishDragging()
+        workspace.place(dragged, onPaneWith: targetSessionID, zone: zone)
+        dropZone = nil
         return true
     }
 
-    private func position(for point: CGPoint) -> TerminalDropPosition {
+    private func update(_ info: DropInfo) {
+        guard let dragged = workspace.draggedSessionID else { dropZone = nil; return }
+        let allowed = workspace.allowedZones(forPaneWith: targetSessionID)
+        // Dragging the pane's own session onto its own center is a no-op: hide the preview.
+        if dragged == targetSessionID {
+            dropZone = zone(for: info.location) == .center ? nil : filtered(info, allowed)
+        } else {
+            dropZone = filtered(info, allowed)
+        }
+    }
+
+    private func filtered(_ info: DropInfo, _ allowed: Set<DropZone>) -> DropZone? {
+        let z = zone(for: info.location)
+        if allowed.contains(z) { return z }
+        return allowed.contains(.center) ? .center : nil
+    }
+
+    private func zone(for point: CGPoint) -> DropZone {
         guard size.width > 0, size.height > 0 else { return .center }
-        let x = point.x / size.width
-        let y = point.y / size.height
-        let candidates: [(TerminalDropPosition, CGFloat)] = [
-            (.left, x),
-            (.right, 1 - x),
-            (.top, y),
-            (.bottom, 1 - y),
-        ]
+        let x = point.x / size.width, y = point.y / size.height
+        let candidates: [(DropZone, CGFloat)] = [(.left, x), (.right, 1 - x), (.top, y), (.bottom, 1 - y)]
         if let nearest = candidates.min(by: { $0.1 < $1.1 }), nearest.1 < 0.25 {
             return nearest.0
         }
