@@ -10,11 +10,7 @@ struct WorkspaceView: View {
                 WorkspaceSidebar()
                 Divider()
             }
-            VStack(spacing: 0) {
-                WorkspaceToolbar()
-                SessionTabStrip()
-                TerminalDeck()
-            }
+            TerminalDeck()
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -146,55 +142,15 @@ private struct SessionSidebarRow: View {
         .padding(.leading, isNested ? 12 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
-            workspace.selectedSessionID = session.id
+            workspace.openSingle(session.id)
+        }
+        .onDrag {
+            workspace.beginDragging(session.id)
+            return NSItemProvider(object: session.id.uuidString as NSString)
         }
         .contextMenu {
             Button("Close") { workspace.close(session) }
         }
-    }
-}
-
-private struct WorkspaceToolbar: View {
-    @EnvironmentObject private var workspace: WorkspaceStore
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Text(workspace.splitSessionIDs.isEmpty ? "Workspace" : "Split workspace")
-                .font(.headline)
-            Spacer()
-            if workspace.splitSessionIDs.isEmpty {
-                Button(action: workspace.splitSelectedSession) {
-                    Label("Split", systemImage: "rectangle.split.2x1")
-                }
-                .disabled(workspace.selectedSession == nil)
-            } else {
-                Button(action: workspace.closeSplit) {
-                    Label("Single view", systemImage: "rectangle")
-                }
-            }
-            Button(action: workspace.createSession) {
-                Label("New", systemImage: "plus")
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(.bar)
-    }
-}
-
-private struct SessionTabStrip: View {
-    @EnvironmentObject private var workspace: WorkspaceStore
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(workspace.sessions) { session in
-                    SessionTab(session: session)
-                }
-            }
-            .padding(8)
-        }
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 }
 
@@ -203,51 +159,90 @@ private struct TerminalDeck: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let displayed = workspace.displayedSessions
-            let splitFraction = workspace.splitFraction
-            ZStack {
+            let frames = paneFrames(in: proxy.size)
+            ZStack(alignment: .topLeading) {
                 ForEach(workspace.sessions) { session in
-                    let index = displayed.firstIndex(of: session)
-                    TerminalPane(session: session,
-                                 isVisible: index != nil)
-                        .frame(width: tileWidth(index: index,
-                                                 count: displayed.count,
-                                                 total: proxy.size.width,
-                                                 fraction: splitFraction),
-                               height: proxy.size.height)
-                        .position(x: tileX(index: index,
-                                            count: displayed.count,
-                                            total: proxy.size.width,
-                                            fraction: splitFraction),
-                                  y: proxy.size.height / 2)
-                        .opacity(index == nil ? 0 : 1)
-                        .allowsHitTesting(index != nil)
+                    let rect = frames[session.id]
+                    TerminalPane(session: session, isVisible: rect != nil)
+                        .frame(width: (rect ?? offscreen(proxy.size)).width,
+                               height: (rect ?? offscreen(proxy.size)).height)
+                        .offset(x: (rect ?? offscreen(proxy.size)).minX,
+                                y: (rect ?? offscreen(proxy.size)).minY)
+                        .opacity(rect == nil ? 0 : 1)
+                        .allowsHitTesting(rect != nil)
                 }
-                if displayed.count == 2 {
-                    Rectangle()
-                        .fill(Color(nsColor: .separatorColor))
-                        .frame(width: 5, height: proxy.size.height)
-                        .position(x: proxy.size.width * splitFraction,
-                                  y: proxy.size.height / 2)
-                        .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                            workspace.resizeSplit(to: value.location.x / proxy.size.width)
-                        })
-                        .help("Drag to resize panes")
-                }
+                columnDividers(in: proxy.size)
+                rowDividers(in: proxy.size)
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .coordinateSpace(name: "deck")
         }
         .background(Color.black)
     }
 
-    private func tileWidth(index: Int?, count: Int, total: CGFloat, fraction: CGFloat) -> CGFloat {
-        guard index != nil, count == 2 else { return total }
-        return index == 0 ? total * fraction : total * (1 - fraction)
+    // Rect off-screen cho session không nằm trong grid (giữ process sống).
+    private func offscreen(_ size: CGSize) -> CGRect {
+        CGRect(x: -size.width - 10, y: 0, width: max(size.width, 1), height: max(size.height, 1))
     }
 
-    private func tileX(index: Int?, count: Int, total: CGFloat, fraction: CGFloat) -> CGFloat {
-        guard let index else { return total / 2 }
-        guard count == 2 else { return total / 2 }
-        return index == 0 ? total * fraction / 2 : total * (1 + fraction) / 2
+    private func paneFrames(in size: CGSize) -> [SessionRecord.ID: CGRect] {
+        var result: [SessionRecord.ID: CGRect] = [:]
+        var x: CGFloat = 0
+        for column in workspace.grid.columns {
+            let w = column.widthFraction * size.width
+            if column.panes.count == 1 {
+                result[column.panes[0]] = CGRect(x: x, y: 0, width: w, height: size.height)
+            } else if column.panes.count == 2 {
+                let topH = column.rowFraction * size.height
+                result[column.panes[0]] = CGRect(x: x, y: 0, width: w, height: topH)
+                result[column.panes[1]] = CGRect(x: x, y: topH, width: w, height: size.height - topH)
+            }
+            x += w
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private func columnDividers(in size: CGSize) -> some View {
+        let columns = workspace.grid.columns
+        ForEach(0..<max(columns.count - 1, 0), id: \.self) { i in
+            let x = cumulativeWidth(upTo: i + 1, in: size)
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 5, height: size.height)
+                .offset(x: x - 2.5)
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
+                    let pairStart = cumulativeWidth(upTo: i, in: size)
+                    let pairWidth = (columns[i].widthFraction + columns[i + 1].widthFraction) * size.width
+                    guard pairWidth > 0 else { return }
+                    workspace.resizeColumn(pairLeadingIndex: i,
+                                           leadingFraction: (value.location.x - pairStart) / pairWidth)
+                })
+        }
+    }
+
+    @ViewBuilder
+    private func rowDividers(in size: CGSize) -> some View {
+        let columns = workspace.grid.columns
+        ForEach(Array(columns.enumerated()), id: \.offset) { i, column in
+            if column.panes.count == 2 {
+                let x = cumulativeWidth(upTo: i, in: size)
+                let w = column.widthFraction * size.width
+                let y = column.rowFraction * size.height
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor))
+                    .frame(width: w, height: 5)
+                    .offset(x: x, y: y - 2.5)
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
+                        guard size.height > 0 else { return }
+                        workspace.resizeRow(columnIndex: i, topFraction: value.location.y / size.height)
+                    })
+            }
+        }
+    }
+
+    private func cumulativeWidth(upTo index: Int, in size: CGSize) -> CGFloat {
+        workspace.grid.columns.prefix(index).reduce(0) { $0 + $1.widthFraction * size.width }
     }
 }
 
@@ -255,95 +250,173 @@ private struct TerminalPane: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     let session: SessionRecord
     let isVisible: Bool
+    @State private var dropZone: DropZone?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(session.status == .running ? Color.green : .secondary)
-                    .frame(width: 8, height: 8)
-                Text(session.title)
-                    .font(.subheadline.weight(.medium))
-                Text(session.workingDirectory)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                Button {
-                    workspace.focusOnly(session)
-                } label: {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(session.status == .running ? Color.green : .secondary)
+                        .frame(width: 8, height: 8)
+                    Text(session.title)
+                        .font(.subheadline.weight(.medium))
+                    Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Button {
+                        workspace.openSingle(session.id)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Show only this session")
+                    Button {
+                        workspace.close(session)
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Close session")
                 }
-                .buttonStyle(.borderless)
-                .help("Show only this session")
-                Button {
-                    workspace.close(session)
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .buttonStyle(.borderless)
-                .help("Close session")
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(Color(nsColor: .controlBackgroundColor))
+                .padding(.horizontal, 12)
+                .frame(height: 34)
+                .background(Color(nsColor: .controlBackgroundColor))
 
-            TerminalHostView(session: session, isVisible: isVisible)
-                .onTapGesture { workspace.selectedSessionID = session.id }
-        }
-        .overlay(alignment: .trailing) {
-            if workspace.splitSessionIDs.count == 2,
-               workspace.splitSessionIDs.first == session.id {
-                Divider().frame(width: 1)
+                TerminalHostView(session: session, isVisible: isVisible)
+                    .onTapGesture { workspace.selectedSessionID = session.id }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 10)
+            }
+            .overlay {
+                ZStack {
+                    Color.clear
+                    if let dropZone {
+                        TerminalDropPreview(zone: dropZone, size: proxy.size)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
+                    targetSessionID: session.id,
+                    size: proxy.size,
+                    dropZone: $dropZone,
+                    workspace: workspace))
+                .onChange(of: workspace.grid) { dropZone = nil }
+                .onChange(of: workspace.draggedSessionID) {
+                    if workspace.draggedSessionID == nil { dropZone = nil }
+                }
             }
         }
     }
 }
 
-private struct SessionTab: View {
-    @EnvironmentObject private var workspace: WorkspaceStore
-    let session: SessionRecord
+private struct TerminalDropPreview: View {
+    let zone: DropZone
+    let size: CGSize
 
     var body: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(session.status == .running ? Color.green : .secondary)
-                .frame(width: 6, height: 6)
-            Text(session.title)
-                .lineLimit(1)
-            Button {
-                workspace.close(session)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2)
-            }
-            .buttonStyle(.plain)
+        let rect = previewRect
+        ZStack {
+            RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 10).fill(.black.opacity(0.38))
+            RoundedRectangle(cornerRadius: 10).stroke(Color.orange, lineWidth: 2)
+            badge(zone == .center ? "Open here" : "Split")
         }
-        .padding(.horizontal, 10)
-        .frame(height: 28)
-        .background(session.id == workspace.selectedSessionID ? Color.accentColor.opacity(0.22) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .contentShape(Rectangle())
-        .onTapGesture { workspace.selectedSessionID = session.id }
-        .onDrag { NSItemProvider(object: session.id.uuidString as NSString) }
-        .onDrop(of: [.text], delegate: SessionTabDropDelegate(destination: session,
-                                                               workspace: workspace))
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
+        .allowsHitTesting(false)
+    }
+
+    private var previewRect: CGRect {
+        let inset: CGFloat = 6, gap: CGFloat = 3
+        switch zone {
+        case .left:
+            return CGRect(x: inset, y: inset,
+                          width: max(0, size.width / 2 - inset - gap),
+                          height: max(0, size.height - inset * 2))
+        case .right:
+            return CGRect(x: size.width / 2 + gap, y: inset,
+                          width: max(0, size.width / 2 - inset - gap),
+                          height: max(0, size.height - inset * 2))
+        case .top:
+            return CGRect(x: inset, y: inset,
+                          width: max(0, size.width - inset * 2),
+                          height: max(0, size.height / 2 - inset - gap))
+        case .bottom:
+            return CGRect(x: inset, y: size.height / 2 + gap,
+                          width: max(0, size.width - inset * 2),
+                          height: max(0, size.height / 2 - inset - gap))
+        case .center:
+            return CGRect(x: inset, y: inset,
+                          width: max(0, size.width - inset * 2),
+                          height: max(0, size.height - inset * 2))
+        }
+    }
+
+    private func badge(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(Color.orange)
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
     }
 }
 
-private struct SessionTabDropDelegate: DropDelegate {
-    let destination: SessionRecord
+private struct TerminalPaneDropDelegate: DropDelegate {
+    let targetSessionID: SessionRecord.ID
+    let size: CGSize
+    @Binding var dropZone: DropZone?
     let workspace: WorkspaceStore
 
-    func dropEntered(info: DropInfo) {
-        guard let provider = info.itemProviders(for: [.text]).first else { return }
-        provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let idString = object as? String, let id = UUID(uuidString: idString) else { return }
-            DispatchQueue.main.async {
-                workspace.move(id, before: destination.id)
-            }
+    func dropEntered(info: DropInfo) { update(info) }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(info)
+        return DropProposal(operation: dropZone == nil ? .cancel : .copy)
+    }
+
+    func dropExited(info: DropInfo) { dropZone = nil }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { workspace.finishDragging() }
+        guard let dragged = workspace.draggedSessionID, let zone = dropZone else {
+            dropZone = nil
+            return false
+        }
+        workspace.place(dragged, onPaneWith: targetSessionID, zone: zone)
+        dropZone = nil
+        return true
+    }
+
+    private func update(_ info: DropInfo) {
+        guard let dragged = workspace.draggedSessionID else { dropZone = nil; return }
+        let allowed = workspace.allowedZones(forPaneWith: targetSessionID)
+        // Dragging the pane's own session onto its own center is a no-op: hide the preview.
+        if dragged == targetSessionID {
+            dropZone = zone(for: info.location) == .center ? nil : filtered(info, allowed)
+        } else {
+            dropZone = filtered(info, allowed)
         }
     }
 
-    func performDrop(info: DropInfo) -> Bool { true }
+    private func filtered(_ info: DropInfo, _ allowed: Set<DropZone>) -> DropZone? {
+        let z = zone(for: info.location)
+        if allowed.contains(z) { return z }
+        return allowed.contains(.center) ? .center : nil
+    }
+
+    private func zone(for point: CGPoint) -> DropZone {
+        guard size.width > 0, size.height > 0 else { return .center }
+        let x = point.x / size.width, y = point.y / size.height
+        let candidates: [(DropZone, CGFloat)] = [(.left, x), (.right, 1 - x), (.top, y), (.bottom, 1 - y)]
+        if let nearest = candidates.min(by: { $0.1 < $1.1 }), nearest.1 < 0.25 {
+            return nearest.0
+        }
+        return .center
+    }
 }
+
