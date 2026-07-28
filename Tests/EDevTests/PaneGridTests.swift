@@ -95,6 +95,13 @@ final class PaneGridTests: XCTestCase {
         XCTAssertEqual(g.paneIDs, [a])
     }
 
+    func testPlaceSelfNonCenterIsNoOp() {
+        var g = PaneGrid.single(a)
+        g.place(a, onPaneWith: a, zone: .right)
+        XCTAssertEqual(g.paneIDs, [a])
+        XCTAssertEqual(g.columns.count, 1)
+    }
+
     func testMoveRemovesFromOldColumnAndDropsEmptyColumn() {
         var g = PaneGrid.single(a)
         g.place(b, onPaneWith: a, zone: .right)   // [a][b]

@@ -47,7 +47,7 @@ struct PaneGrid: Equatable {
 
     mutating func place(_ dragged: UUID, onPaneWith target: UUID, zone: DropZone) {
         guard location(of: target) != nil else { return }
-        if dragged == target, zone == .center { return }
+        if dragged == target { return }
         guard allowedZones(forPaneWith: target).contains(zone) else { return }
 
         remove(dragged)                                   // move semantics
