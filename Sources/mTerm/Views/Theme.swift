@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Central palette for EDev's "Emerald" dark reskin. Every view reads its colors
+/// Central palette for MTerm's "Emerald" dark reskin. Every view reads its colors
 /// from here so the theme lives in one place. Values come from the design's
 /// skin A (emerald accent over a neutral near-black background).
-enum EDevTheme {
+enum MTermTheme {
     // Surfaces
     static let deck = Color(hex: 0x0A0C0F)       // pane deck background
     static let terminal = Color(hex: 0x0A0C0F)   // terminal area / pane body

@@ -1,5 +1,5 @@
 import XCTest
-@testable import EDev
+@testable import mTerm
 
 private func paneFrames(for grid: PaneGrid, size: CGSize) -> [UUID: CGRect] {
     var result: [UUID: CGRect] = [:]

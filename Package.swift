@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "EDev",
+    name: "mTerm",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "EDev", targets: ["EDev"]),
+        .executable(name: "mTerm", targets: ["mTerm"]),
     ],
     dependencies: [
         // Fork of SwiftTerm with reflow-on-resize disabled (isReflowEnabled=false).
@@ -18,9 +18,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "EDev",
+            name: "mTerm",
             dependencies: [
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]),
-        .testTarget(name: "EDevTests", dependencies: ["EDev"]),
+        .testTarget(name: "mTermTests", dependencies: ["mTerm"]),
     ])

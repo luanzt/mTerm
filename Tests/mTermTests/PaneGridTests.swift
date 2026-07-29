@@ -1,5 +1,5 @@
 import XCTest
-@testable import EDev
+@testable import mTerm
 
 final class PaneGridTests: XCTestCase {
     private let a = UUID(), b = UUID(), c = UUID(), d = UUID()

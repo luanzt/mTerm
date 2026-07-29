@@ -1,5 +1,5 @@
 import XCTest
-@testable import EDev
+@testable import mTerm
 
 /// A drag race at the UI layer can momentarily leave the grid with a pane id in
 /// two places. `paneFrames` would then give that id a single rect (the last

@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class EDevAppDelegate: NSObject, NSApplicationDelegate {
+final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
     private var window: NSWindow?
 
@@ -16,7 +16,10 @@ final class EDevAppDelegate: NSObject, NSApplicationDelegate {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
-        window.title = "EDev"
+        window.title = "mTerm"
+        // Keep the title for Window menu / Mission Control, but don't draw it in
+        // the titlebar — the header stays clean.
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         let hosting = NSHostingView(rootView: content)
         // Do NOT let SwiftUI content drive the window size. Each SwiftTerm pane
@@ -28,6 +31,7 @@ final class EDevAppDelegate: NSObject, NSApplicationDelegate {
         hosting.sizingOptions = []
         window.contentView = hosting
         window.contentMinSize = NSSize(width: 980, height: 620)
+        installTitlebarToggle(in: window)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
@@ -41,6 +45,20 @@ final class EDevAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleSidebar(_ sender: Any?) {
         workspace.toggleSidebar()
+    }
+
+    /// Pin the sidebar toggle to the trailing edge of the window titlebar (next
+    /// to the "MTerm" title, flush against the window's right edge).
+    private func installTitlebarToggle(in window: NSWindow) {
+        let button = SidebarToggleButton()
+            .environmentObject(workspace)
+        let hosting = NSHostingView(rootView: button)
+        hosting.frame = NSRect(x: 0, y: 0, width: 36, height: 28)
+
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.view = hosting
+        accessory.layoutAttribute = .right
+        window.addTitlebarAccessoryViewController(accessory)
     }
 
     private func installMainMenu() {

@@ -10,36 +10,20 @@ struct WorkspaceView: View {
             if workspace.isSidebarVisible {
                 WorkspaceSidebar()
                 Rectangle()
-                    .fill(EDevTheme.sidebarBorder)
+                    .fill(MTermTheme.sidebarBorder)
                     .frame(width: 1)
             }
             TerminalDeck()
-                // When the sidebar is hidden, this floating button is the only way
-                // back — otherwise the reveal control disappears with the sidebar.
-                .overlay(alignment: .topLeading) {
-                    if !workspace.isSidebarVisible {
-                        SidebarToggleButton(floating: true)
-                            .padding(.leading, 8)
-                            .padding(.top, 8)
-                    }
-                }
         }
-        .background(EDevTheme.deck)
+        .background(MTermTheme.deck)
     }
 }
 
-/// Toggles the sidebar. Rendered as a plain hover button inside the sidebar
-/// header, or as a bordered floating button over the deck when the sidebar is
-/// hidden (`floating`). ⌘B (View ▸ Toggle Sidebar) does the same thing.
-private struct SidebarToggleButton: View {
+/// Toggles the sidebar. Lives in the window titlebar (see `MTermApp`), pinned to
+/// the trailing edge. ⌘B (View ▸ Toggle Sidebar) does the same thing.
+struct SidebarToggleButton: View {
     @EnvironmentObject private var workspace: WorkspaceStore
-    var floating = false
     @State private var hovering = false
-
-    private var background: Color {
-        if floating { return EDevTheme.control }
-        return hovering ? EDevTheme.rowHover : .clear
-    }
 
     var body: some View {
         Button {
@@ -47,15 +31,10 @@ private struct SidebarToggleButton: View {
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(hovering ? EDevTheme.text : EDevTheme.dim)
+                .foregroundStyle(hovering ? MTermTheme.text : MTermTheme.dim)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 7).fill(background))
-                .overlay {
-                    if floating {
-                        RoundedRectangle(cornerRadius: 7)
-                            .stroke(EDevTheme.controlBorder, lineWidth: 1)
-                    }
-                }
+                .background(RoundedRectangle(cornerRadius: 7)
+                    .fill(hovering ? MTermTheme.rowHover : .clear))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -70,12 +49,6 @@ private struct WorkspaceSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                SidebarToggleButton()
-            }
-            .padding(.horizontal, 10)
-            .padding(.top, 8)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     sidebarAction("New terminal", icon: "plus") {
@@ -92,7 +65,7 @@ private struct WorkspaceSidebar: View {
                         } label: {
                             Image(systemName: "plus")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(EDevTheme.dim)
+                                .foregroundStyle(MTermTheme.dim)
                                 .frame(width: 20, height: 20)
                         }
                         .buttonStyle(.borderless)
@@ -121,7 +94,7 @@ private struct WorkspaceSidebar: View {
             }
         }
         .frame(width: 250)
-        .background(EDevTheme.sidebar)
+        .background(MTermTheme.sidebar)
     }
 
     private func toggle(_ folder: WorkspaceFolder) {
@@ -143,7 +116,7 @@ private struct WorkspaceSidebar: View {
                 Text(title)
                     .font(.caption2.weight(.bold))
                     .tracking(1)
-                    .foregroundStyle(EDevTheme.dim2)
+                    .foregroundStyle(MTermTheme.dim2)
                 Spacer()
                 accessory()
             }
@@ -159,19 +132,19 @@ private struct WorkspaceSidebar: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(EDevTheme.accent)
+                    .foregroundStyle(MTermTheme.accent)
                 Text(title)
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(EDevTheme.text)
+                    .foregroundStyle(MTermTheme.text)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(EDevTheme.control)
+                    .fill(MTermTheme.control)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(EDevTheme.controlBorder, lineWidth: 1))
+                            .stroke(MTermTheme.controlBorder, lineWidth: 1))
             )
         })
         .buttonStyle(.plain)
@@ -200,28 +173,28 @@ private struct WorkspaceFolderRow: View {
         HStack(spacing: 8) {
             Image(systemName: hasChildren ? "chevron.right" : "folder")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(EDevTheme.dim2)
+                .foregroundStyle(MTermTheme.dim2)
                 .rotationEffect(.degrees(hasChildren && isExpanded ? 90 : 0))
                 .frame(width: 12)
             Text(folder.name)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(EDevTheme.text)
+                .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)
             Spacer(minLength: 6)
             if count > 0 {
                 Text("\(count)")
                     .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(EDevTheme.accent)
+                    .foregroundStyle(MTermTheme.accent)
                     .frame(minWidth: 18, minHeight: 18)
                     .padding(.horizontal, 4)
-                    .background(Circle().fill(EDevTheme.accent.opacity(0.16)))
+                    .background(Circle().fill(MTermTheme.accent.opacity(0.16)))
             }
             Button {
                 workspace.createSession(in: folder)
             } label: {
                 Image(systemName: "plus")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(EDevTheme.dim)
+                    .foregroundStyle(MTermTheme.dim)
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
@@ -232,7 +205,7 @@ private struct WorkspaceFolderRow: View {
         .background(GeometryReader { g in
             Color.clear.onAppear { rowHeight = g.size.height }
         })
-        .background(isHovering ? EDevTheme.rowHover : .clear)
+        .background(isHovering ? MTermTheme.rowHover : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .onHover { isHovering = $0 }
         .opacity(workspace.draggedWorkspaceID == folder.id ? 0.4 : 1)
@@ -259,7 +232,7 @@ private struct WorkspaceFolderRow: View {
 
     private func insertionLine(visible: Bool) -> some View {
         RoundedRectangle(cornerRadius: 1)
-            .fill(EDevTheme.accent)
+            .fill(MTermTheme.accent)
             .frame(height: 2)
             .padding(.horizontal, 10)
             .opacity(visible ? 1 : 0)
@@ -314,14 +287,14 @@ private struct SessionSidebarRow: View {
     var body: some View {
         HStack(spacing: 9) {
             Circle()
-                .fill(session.status == .running ? EDevTheme.accent : EDevTheme.dim2)
+                .fill(session.status == .running ? MTermTheme.accent : MTermTheme.dim2)
                 .frame(width: 7, height: 7)
-                .shadow(color: session.status == .running ? EDevTheme.accent.opacity(0.7) : .clear,
+                .shadow(color: session.status == .running ? MTermTheme.accent.opacity(0.7) : .clear,
                         radius: 3)
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? EDevTheme.text : EDevTheme.dim)
+                    .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
                     .lineLimit(1)
                 // Sessions nested under a workspace folder omit the directory
                 // subtitle in the sidebar (the folder already names it); loose
@@ -329,7 +302,7 @@ private struct SessionSidebarRow: View {
                 if !isNested {
                     Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(EDevTheme.dim2)
+                        .foregroundStyle(MTermTheme.dim2)
                         .lineLimit(1)
                 }
             }
@@ -339,7 +312,7 @@ private struct SessionSidebarRow: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(EDevTheme.dim2)
+                    .foregroundStyle(MTermTheme.dim2)
                     .frame(width: 20, height: 20)
             }
             .buttonStyle(.borderless)
@@ -347,10 +320,10 @@ private struct SessionSidebarRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(isSelected ? EDevTheme.rowSelected : .clear)
+        .background(isSelected ? MTermTheme.rowSelected : .clear)
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 1)
-                .fill(EDevTheme.accent)
+                .fill(MTermTheme.accent)
                 .frame(width: 2)
                 .padding(.vertical, 4)
                 .opacity(isSelected ? 1 : 0)
@@ -407,17 +380,17 @@ private struct TerminalDeck: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .coordinateSpace(name: "deck")
         }
-        .background(EDevTheme.deck)
+        .background(MTermTheme.deck)
     }
 
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "terminal")
                 .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(EDevTheme.dim2)
+                .foregroundStyle(MTermTheme.dim2)
             Text("No terminals open")
                 .font(.headline)
-                .foregroundStyle(EDevTheme.dim)
+                .foregroundStyle(MTermTheme.dim)
             Button {
                 workspace.createSession()
             } label: {
@@ -426,7 +399,7 @@ private struct TerminalDeck: View {
                     .foregroundStyle(Color(hex: 0x08120D))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(EDevTheme.accent))
+                    .background(RoundedRectangle(cornerRadius: 10).fill(MTermTheme.accent))
             }
             .buttonStyle(.plain)
         }
@@ -471,7 +444,7 @@ private struct TerminalDeck: View {
             let cols = workspace.grid.columns
                 .map { "[\($0.panes.count)p]" }.joined(separator: " ")
             FileHandle.standardError.write(Data(
-                "EDEV_GRID_ANOMALY cols=\(cols) dup=\(duplicated) orphan=\(orphaned) missingFrame=\(missingFrame) gridPanes=\(ids.count) unique=\(Set(ids).count) sessions=\(sessionIDs.count)\n".utf8))
+                "MTERM_GRID_ANOMALY cols=\(cols) dup=\(duplicated) orphan=\(orphaned) missingFrame=\(missingFrame) gridPanes=\(ids.count) unique=\(Set(ids).count) sessions=\(sessionIDs.count)\n".utf8))
         }
         return result
     }
@@ -531,7 +504,7 @@ private struct ResizeHandle: View {
         ZStack {
             Color.clear
             RoundedRectangle(cornerRadius: 1)
-                .fill(EDevTheme.accent)
+                .fill(MTermTheme.accent)
                 .opacity(hovering ? 0.85 : 0)
                 .frame(width: orientation == .vertical ? 2 : nil,
                        height: orientation == .horizontal ? 2 : nil)
@@ -561,7 +534,7 @@ private struct TerminalPane: View {
             VStack(spacing: 0) {
                 // 2px accent bar marks the focused pane (transparent otherwise).
                 Rectangle()
-                    .fill(showsFocusMarker ? EDevTheme.accent : Color.clear)
+                    .fill(showsFocusMarker ? MTermTheme.accent : Color.clear)
                     .frame(height: 2)
                 header
                 TerminalHostView(session: session,
@@ -570,16 +543,16 @@ private struct TerminalPane: View {
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
             }
-            .background(EDevTheme.terminal)
+            .background(MTermTheme.terminal)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(showsFocusMarker ? EDevTheme.accent : EDevTheme.border, lineWidth: 1)
+                    .stroke(showsFocusMarker ? MTermTheme.accent : MTermTheme.border, lineWidth: 1)
             )
-            .shadow(color: showsFocusMarker ? EDevTheme.glow : Color.black.opacity(0.45),
+            .shadow(color: showsFocusMarker ? MTermTheme.glow : Color.black.opacity(0.45),
                     radius: showsFocusMarker ? 5 : 2,
                     y: showsFocusMarker ? 3 : 1)
-            .opacity(isFocused ? 1 : EDevTheme.inactivePaneOpacity)
+            .opacity(isFocused ? 1 : MTermTheme.inactivePaneOpacity)
             .overlay {
                 ZStack {
                     Color.clear
@@ -612,16 +585,16 @@ private struct TerminalPane: View {
             Circle()
                 .fill(dotColor)
                 .frame(width: 8, height: 8)
-                .shadow(color: dotColor == EDevTheme.accent ? EDevTheme.accent.opacity(0.8) : .clear,
+                .shadow(color: dotColor == MTermTheme.accent ? MTermTheme.accent.opacity(0.8) : .clear,
                         radius: 4)
             Text(session.title)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(EDevTheme.text)
+                .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)
                 .fixedSize()
             Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
                 .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(EDevTheme.dim2)
+                .foregroundStyle(MTermTheme.dim2)
                 .lineLimit(1)
             Spacer(minLength: 6)
             PaneHeaderButton(icon: workspace.isMaximized
@@ -645,16 +618,16 @@ private struct TerminalPane: View {
         .padding(.leading, 11)
         .padding(.trailing, 8)
         .frame(height: 34)
-        .background(showsFocusMarker ? EDevTheme.headerActive : Color.clear)
-        .background(EDevTheme.header)
+        .background(showsFocusMarker ? MTermTheme.headerActive : Color.clear)
+        .background(MTermTheme.header)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(EDevTheme.border).frame(height: 1)
+            Rectangle().fill(MTermTheme.border).frame(height: 1)
         }
     }
 
     private var dotColor: Color {
-        if session.status != .running { return EDevTheme.danger }
-        return isFocused ? EDevTheme.accent : EDevTheme.dim
+        if session.status != .running { return MTermTheme.danger }
+        return isFocused ? MTermTheme.accent : MTermTheme.dim
     }
 
     private var isFocused: Bool {
@@ -675,13 +648,13 @@ private struct PaneHeaderButton: View {
     @State private var isHovering = false
 
     private var tint: Color {
-        guard isHovering else { return EDevTheme.dim }
-        return danger ? EDevTheme.danger : EDevTheme.accent
+        guard isHovering else { return MTermTheme.dim }
+        return danger ? MTermTheme.danger : MTermTheme.accent
     }
 
     private var fill: Color {
         guard isHovering else { return .clear }
-        return danger ? EDevTheme.danger.opacity(0.16) : Color.white.opacity(0.09)
+        return danger ? MTermTheme.danger.opacity(0.16) : Color.white.opacity(0.09)
     }
 
     var body: some View {
@@ -709,7 +682,7 @@ private struct TerminalDropPreview: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: 10).fill(.black.opacity(0.38))
-            RoundedRectangle(cornerRadius: 10).stroke(EDevTheme.accent, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 10).stroke(MTermTheme.accent, lineWidth: 2)
             badge(zone == .center ? "Open here" : "Split")
         }
         .frame(width: rect.width, height: rect.height)
@@ -748,7 +721,7 @@ private struct TerminalDropPreview: View {
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Color(hex: 0x08120D))
             .padding(.horizontal, 14).padding(.vertical, 8)
-            .background(EDevTheme.accent)
+            .background(MTermTheme.accent)
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.35), radius: 10, y: 3)
     }

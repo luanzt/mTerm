@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 swift build                 # build
 swift test                  # run all tests
-swift run EDev              # build & launch the app (macOS GUI window)
-.build/debug/EDev &         # launch an already-built binary in the background
+swift run mTerm              # build & launch the app (macOS GUI window)
+.build/debug/mTerm &         # launch an already-built binary in the background
 
 # Run a single test / suite (XCTest name filter):
 swift test --filter WorkspaceStoreTests
@@ -16,14 +16,14 @@ swift test --filter WorkspaceStoreTests/testToggleMaximizeCollapsesThenRestoresL
 ```
 
 Editor (SourceKit) diagnostics in this project are frequently **stale/false**
-(e.g. "Cannot find EDevTheme in scope" right after adding a file). Trust
+(e.g. "Cannot find MTermTheme in scope" right after adding a file). Trust
 `swift build` / `swift test`, not the inline diagnostics.
 
 ## Big picture
 
-EDev is a macOS terminal-multiplexer app: a SwiftPM **executable** (not a SwiftUI
-`App`). `main.swift` boots `NSApplication` with an `EDevAppDelegate`
-(`EDevApp.swift`) that builds the main menu (⌘B = Toggle Sidebar) and hosts the
+mTerm is a macOS terminal-multiplexer app: a SwiftPM **executable** (not a SwiftUI
+`App`). `main.swift` boots `NSApplication` with an `MTermAppDelegate`
+(`mTermApp.swift`) that builds the main menu (⌘B = Toggle Sidebar) and hosts the
 SwiftUI `WorkspaceView` in an `NSWindow` via `NSHostingView`.
 
 - `hosting.sizingOptions = []` is deliberate: without it, each SwiftTerm view's
@@ -66,10 +66,10 @@ constraints learned the hard way:
 started from a **frame-change observer** (not `updateNSView`) the first time the
 view has a real non-zero frame, so the PTY's initial winsize matches the pane and
 prompts don't reprint on startup. `TerminalDeck.paneFrames` has a stderr tripwire
-that logs `EDEV_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a frame.
+that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a frame.
 
 ### Theme
-`Views/Theme.swift` — `EDevTheme` holds the whole "Emerald" dark palette + a
+`Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a
 `Color(hex:)` helper. All views read colors from here; don't reintroduce
 `Color(nsColor: .windowBackgroundColor)`-style system colors.
 
