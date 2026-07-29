@@ -16,7 +16,9 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.font = terminalFont
         terminal.caretColor = .white
         terminal.wantsLayer = true
-        terminal.layer?.backgroundColor = NSColor.black.cgColor
+        // Match the deck's near-black (#0A0C0F) so the terminal blends into the
+        // pane body instead of sitting on a pure-black rectangle.
+        terminal.layer?.backgroundColor = NSColor(red: 0x0A / 255, green: 0x0C / 255, blue: 0x0F / 255, alpha: 1).cgColor
         context.coordinator.terminal = terminal
 
         // Start the shell the first time the view has a real (non-zero) size, so

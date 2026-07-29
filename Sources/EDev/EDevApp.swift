@@ -10,7 +10,6 @@ final class EDevAppDelegate: NSObject, NSApplicationDelegate {
         installMainMenu()
         let content = WorkspaceView()
             .environmentObject(workspace)
-            .frame(minWidth: 980, minHeight: 620)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
@@ -19,7 +18,16 @@ final class EDevAppDelegate: NSObject, NSApplicationDelegate {
             defer: false)
         window.title = "EDev"
         window.titlebarAppearsTransparent = true
-        window.contentView = NSHostingView(rootView: content)
+        let hosting = NSHostingView(rootView: content)
+        // Do NOT let SwiftUI content drive the window size. Each SwiftTerm pane
+        // reports an intrinsic width (~its column count), so by default adding a
+        // second pane side-by-side doubles the hosting view's minimum width and
+        // AppKit grows the window to fit — an animated resize that sweeps every
+        // pane's size and storms the shells with SIGWINCH. With no sizing options
+        // the window stays user-controlled and a split just divides existing space.
+        hosting.sizingOptions = []
+        window.contentView = hosting
+        window.contentMinSize = NSSize(width: 980, height: 620)
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window

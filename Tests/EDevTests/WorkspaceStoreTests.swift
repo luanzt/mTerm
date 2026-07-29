@@ -167,4 +167,50 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.allowedZones(forPaneWith: a),
                        [.center, .left, .right, .top, .bottom])
     }
+
+    func testToggleMaximizeCollapsesThenRestoresLayout() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)      // grid [a][b]
+        let twoColumn = store.grid
+        XCTAssertFalse(store.isMaximized)
+
+        store.toggleMaximize(a)                          // maximize a
+        XCTAssertTrue(store.isMaximized)
+        XCTAssertEqual(store.grid.paneIDs, [a])
+        XCTAssertEqual(store.selectedSessionID, a)
+
+        store.toggleMaximize(a)                          // restore
+        XCTAssertFalse(store.isMaximized)
+        XCTAssertEqual(store.grid, twoColumn)
+    }
+
+    func testToggleMaximizeNoOpWithSinglePane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.toggleMaximize(a)                          // only one pane → nothing to hide
+        XCTAssertFalse(store.isMaximized)
+        XCTAssertEqual(store.grid.paneIDs, [a])
+    }
+
+    func testClosingWhileMaximizedEndsMaximizeState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)      // grid [a][b]
+
+        store.toggleMaximize(a)                          // maximize a, remembering [a][b]
+        XCTAssertTrue(store.isMaximized)
+
+        // Closing a session drops the remembered layout, so there is nothing to
+        // restore to — the ⤢ button reverts to "maximize" and the grid stays [a].
+        store.close(store.session(for: b)!)
+        XCTAssertFalse(store.isMaximized)
+        XCTAssertEqual(store.grid.paneIDs, [a])
+    }
 }

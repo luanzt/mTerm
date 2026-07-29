@@ -67,15 +67,14 @@ struct PaneGrid: Equatable {
         case .bottom:
             columns[loc.column].panes.append(dragged)
         }
+        enforceInvariants()
     }
 
     mutating func remove(_ id: UUID) {
-        guard let loc = location(of: id) else { return }
-        columns[loc.column].panes.remove(at: loc.row)
-        if columns[loc.column].panes.isEmpty {
-            columns.remove(at: loc.column)
-            normalizeWidths()
+        if let loc = location(of: id) {
+            columns[loc.column].panes.remove(at: loc.row)
         }
+        enforceInvariants()
     }
 
     mutating func resizeColumn(pairLeadingIndex index: Int, leadingFraction fraction: CGFloat) {
@@ -95,5 +94,26 @@ struct PaneGrid: Equatable {
         guard !columns.isEmpty else { return }
         let equal = 1 / CGFloat(columns.count)
         for i in columns.indices { columns[i].widthFraction = equal }
+    }
+
+    /// Restores the grid's invariants after a mutation: no pane id may appear in
+    /// more than one place (a UI drag race can momentarily duplicate one, which
+    /// would blank the earlier column when frames are laid out), and no column
+    /// may be empty. The first occurrence of a duplicate id wins so a pane keeps
+    /// its original slot rather than jumping.
+    private mutating func enforceInvariants() {
+        var seen = Set<UUID>()
+        for c in columns.indices {
+            columns[c].panes.removeAll { id in
+                if seen.contains(id) { return true }
+                seen.insert(id)
+                return false
+            }
+        }
+        let countBefore = columns.count
+        columns.removeAll { $0.panes.isEmpty }
+        if columns.count != countBefore {
+            normalizeWidths()
+        }
     }
 }
