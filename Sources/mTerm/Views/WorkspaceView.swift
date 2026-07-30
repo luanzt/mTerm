@@ -436,7 +436,7 @@ private struct SessionStatusIcon: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(MTermTheme.claude)
                     .frame(width: 17, height: 17)
-                ClaudeMark()
+                ClaudeLogo()
                     .fill(.white)
                     .frame(width: 11, height: 11)
             } else {
@@ -451,31 +451,52 @@ private struct SessionStatusIcon: View {
     }
 }
 
-/// The Claude "sunburst" mark: tapered spokes radiating from the center, drawn as
-/// a vector so it needs no bundled asset and scales with its frame.
-struct ClaudeMark: Shape {
-    var spokes = 8
+/// The real Claude mark, transcribed from `claude-color.svg` (viewBox 0 0 24 24).
+/// The one SVG arc was converted to a cubic bézier so the path is only absolute
+/// M/L/C/Z commands — parsed here and scaled to fit the frame (aspect-preserving,
+/// centered). No bundled asset needed.
+struct ClaudeLogo: Shape {
+    // Absolute path, generated from the source SVG.
+    static let pathData = "M4.709 15.955 L9.429 13.308 L9.509 13.078 L9.429 12.95 L9.2 12.95 L8.41 12.902 L5.712 12.829 L3.373 12.732 L1.107 12.61 L0.536 12.489 L0 11.784 L0.055 11.432 L0.535 11.111 L1.221 11.171 L2.741 11.274 L5.019 11.432 L6.671 11.529 L9.12 11.784 L9.509 11.784 L9.564 11.627 L9.43 11.529 L9.327 11.432 L6.969 9.836 L4.417 8.148 L3.081 7.176 L2.357 6.685 L1.993 6.223 L1.835 5.215 L2.491 4.493 L3.372 4.553 L3.597 4.614 L4.49 5.3 L6.398 6.776 L8.889 8.609 L9.254 8.913 L9.399 8.81 L9.418 8.737 L9.254 8.463 L7.899 6.017 L6.453 3.527 L5.809 2.495 L5.639 1.876 C5.574 1.638 5.539 1.393 5.535 1.147 L6.283 0.134 L6.696 0 L7.692 0.134 L8.112 0.498 L8.732 1.912 L9.734 4.141 L11.289 7.171 L11.745 8.069 L11.988 8.901 L12.079 9.156 L12.237 9.156 L12.237 9.01 L12.365 7.304 L12.602 5.209 L12.832 2.514 L12.912 1.754 L13.288 0.844 L14.035 0.352 L14.619 0.632 L15.099 1.317 L15.032 1.761 L14.746 3.612 L14.187 6.515 L13.823 8.457 L14.035 8.457 L14.278 8.215 L15.263 6.909 L16.915 4.845 L17.645 4.025 L18.495 3.121 L19.042 2.69 L20.075 2.69 L20.835 3.819 L20.495 4.985 L19.431 6.332 L18.55 7.474 L17.286 9.174 L16.496 10.534 L16.569 10.644 L16.757 10.624 L19.613 10.018 L21.156 9.738 L22.997 9.423 L23.83 9.811 L23.921 10.206 L23.593 11.013 L21.624 11.499 L19.315 11.961 L15.876 12.774 L15.834 12.804 L15.883 12.865 L17.432 13.011 L18.094 13.047 L19.716 13.047 L22.736 13.272 L23.526 13.794 L24 14.432 L23.921 14.917 L22.706 15.537 L21.066 15.148 L17.237 14.238 L15.925 13.909 L15.743 13.909 L15.743 14.019 L16.836 15.087 L18.842 16.897 L21.351 19.227 L21.478 19.805 L21.156 20.26 L20.816 20.211 L18.611 18.554 L17.76 17.807 L15.834 16.187 L15.706 16.187 L15.706 16.357 L16.15 17.006 L18.495 20.527 L18.617 21.607 L18.447 21.96 L17.839 22.173 L17.171 22.051 L15.797 20.126 L14.382 17.959 L13.239 16.016 L13.099 16.096 L12.425 23.35 L12.109 23.72 L11.38 24 L10.773 23.539 L10.451 22.792 L10.773 21.316 L11.162 19.392 L11.477 17.862 L11.763 15.962 L11.933 15.33 L11.921 15.288 L11.781 15.306 L10.347 17.273 L8.167 20.218 L6.441 22.063 L6.027 22.227 L5.31 21.857 L5.377 21.195 L5.778 20.606 L8.166 17.57 L9.606 15.688 L10.536 14.602 L10.53 14.444 L10.475 14.444 L4.132 18.56 L3.002 18.706 L2.515 18.25 L2.576 17.504 L2.807 17.261 L4.715 15.949 L4.709 15.955 Z"
 
     func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let outer = min(rect.width, rect.height) / 2
-        let inner = outer * 0.30
-        let halfWidth = outer * 0.14   // half-angle taper at the hub
+        // Tokenize: leading command letters are glued to the first number
+        // (e.g. "M4.709"); split those apart.
+        var tokens: [Substring] = []
+        for token in Self.pathData.split(separator: " ") {
+            if let first = token.first, first.isLetter {
+                tokens.append(token.prefix(1))
+                let rest = token.dropFirst()
+                if !rest.isEmpty { tokens.append(rest) }
+            } else {
+                tokens.append(token)
+            }
+        }
 
-        for i in 0..<spokes {
-            let angle = (Double(i) / Double(spokes)) * 2 * .pi
-            let perp = angle + .pi / 2
-            let tip = CGPoint(x: center.x + cos(angle) * outer,
-                              y: center.y + sin(angle) * outer)
-            let base1 = CGPoint(x: center.x + cos(angle) * inner + cos(perp) * halfWidth,
-                                y: center.y + sin(angle) * inner + sin(perp) * halfWidth)
-            let base2 = CGPoint(x: center.x + cos(angle) * inner - cos(perp) * halfWidth,
-                                y: center.y + sin(angle) * inner - sin(perp) * halfWidth)
-            path.move(to: base1)
-            path.addLine(to: tip)
-            path.addLine(to: base2)
-            path.closeSubpath()
+        let scale = min(rect.width, rect.height) / 24
+        let originX = rect.midX - 12 * scale
+        let originY = rect.midY - 12 * scale
+        func point(_ x: Substring, _ y: Substring) -> CGPoint {
+            CGPoint(x: originX + CGFloat(Double(x) ?? 0) * scale,
+                    y: originY + CGFloat(Double(y) ?? 0) * scale)
+        }
+
+        var path = Path()
+        var i = 0
+        while i < tokens.count {
+            let command = tokens[i].first
+            i += 1
+            switch command {
+            case "M": path.move(to: point(tokens[i], tokens[i + 1])); i += 2
+            case "L": path.addLine(to: point(tokens[i], tokens[i + 1])); i += 2
+            case "C":
+                path.addCurve(to: point(tokens[i + 4], tokens[i + 5]),
+                              control1: point(tokens[i], tokens[i + 1]),
+                              control2: point(tokens[i + 2], tokens[i + 3]))
+                i += 6
+            case "Z": path.closeSubpath()
+            default: break
+            }
         }
         return path
     }
