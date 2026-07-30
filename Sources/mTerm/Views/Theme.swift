@@ -36,6 +36,37 @@ enum MTermTheme {
     /// Opacity applied to an unfocused pane — deliberately gentle so terminal
     /// text stays readable (the design's 0.88 dims a bit too hard for reading).
     static let inactivePaneOpacity: Double = 0.92
+
+    // MARK: - Terminal (SwiftTerm) colors
+    // 24-bit RGB. SwiftTerm's built-in default foreground is a ~54% gray
+    // (Color(35389,…)), which makes plain output look washed-out; we override it
+    // with a bright near-white and install a vibrant 16-color ANSI palette
+    // (8 normal + 8 bright) tuned to the Emerald accent so program output pops.
+
+    static let terminalForeground: UInt32 = 0xBBBEC2  // primary text (E7EAF0 dimmed ~19%)
+    static let terminalBackground: UInt32 = 0x0A0C0F  // matches the pane deck
+    static let terminalCaret: UInt32 = 0xBBBEC2
+
+    // Vibrant palette (~15% desaturated from the pure Tailwind hues so colors
+    // read calmer without going gray). 8 normal + 8 bright.
+    static let ansiPalette: [UInt32] = [
+        0x1B1E23,  // 0  black    (lifted so black-on-bg stays visible)
+        0xEA7777,  // 1  red
+        0x44CB9A,  // 2  green    (emerald accent)
+        0xF2BF3B,  // 3  yellow
+        0x69A3EC,  // 4  blue
+        0xBC89EF,  // 5  magenta
+        0x87D0F3,  // 6  cyan
+        0xE7EAEF,  // 7  white
+        0x575E68,  // 8  bright black
+        0xF3A9A9,  // 9  bright red
+        0x7AE1B8,  // 10 bright green
+        0xF5D361,  // 11 bright yellow
+        0x99C4F3,  // 12 bright blue
+        0xD5B7F6,  // 13 bright magenta
+        0xBFE4F8,  // 14 bright cyan
+        0xFFFFFF,  // 15 bright white
+    ]
 }
 
 extension Color {

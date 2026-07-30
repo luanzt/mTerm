@@ -14,11 +14,17 @@ struct TerminalHostView: NSViewRepresentable {
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let terminal = LocalProcessTerminalView(frame: .zero)
         terminal.font = terminalFont
-        terminal.caretColor = .white
+        terminal.caretColor = NSColor(hex: MTermTheme.terminalCaret)
         terminal.wantsLayer = true
         // Match the deck's near-black (#0A0C0F) so the terminal blends into the
         // pane body instead of sitting on a pure-black rectangle.
-        terminal.layer?.backgroundColor = NSColor(red: 0x0A / 255, green: 0x0C / 255, blue: 0x0F / 255, alpha: 1).cgColor
+        terminal.layer?.backgroundColor = NSColor(hex: MTermTheme.terminalBackground).cgColor
+        // SwiftTerm's default foreground is a ~54% gray and its default ANSI
+        // palette is muted; install our bright foreground + vibrant palette so
+        // output isn't washed-out gray. (Colors live in MTermTheme.)
+        terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
+        terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
+        terminal.installColors(MTermTheme.ansiPalette.map { SwiftTerm.Color(hex: $0) })
         context.coordinator.terminal = terminal
 
         // Start the shell the first time the view has a real (non-zero) size, so
@@ -81,6 +87,8 @@ struct TerminalHostView: NSViewRepresentable {
         }
     }
 
+    // MARK: Coordinator
+
     final class Coordinator {
         var terminal: LocalProcessTerminalView?
         var didStartProcess = false
@@ -93,5 +101,26 @@ struct TerminalHostView: NSViewRepresentable {
             didStartProcess = true
             startShell?(terminal)
         }
+    }
+}
+
+private extension NSColor {
+    /// 24-bit RGB hex literal, e.g. `NSColor(hex: 0x34D399)`.
+    convenience init(hex: UInt32) {
+        self.init(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1)
+    }
+}
+
+private extension SwiftTerm.Color {
+    /// 24-bit RGB hex literal mapped into SwiftTerm's 16-bit-per-channel space.
+    convenience init(hex: UInt32) {
+        self.init(
+            red: UInt16((hex >> 16) & 0xFF) * 257,
+            green: UInt16((hex >> 8) & 0xFF) * 257,
+            blue: UInt16(hex & 0xFF) * 257)
     }
 }
