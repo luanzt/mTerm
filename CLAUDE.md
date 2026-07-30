@@ -99,7 +99,10 @@ fallback `#2761 (https://…)`. Preserve an explicit `FORCE_HYPERLINK=0` opt-out
 
 `Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a
 `Color(hex:)` helper. All views read colors from here; don't reintroduce
-`Color(nsColor: .windowBackgroundColor)`-style system colors.
+`Color(nsColor: .windowBackgroundColor)`-style system colors. Terminal
+foreground/cursor/link and ANSI 0–15 intentionally mirror the dark variants in
+iTerm2's `plists/DefaultBookmark.plist`; the terminal background remains mTerm's
+deck color so the embedded view blends into the pane.
 
 ## Dependencies
 

@@ -39,37 +39,33 @@ enum MTermTheme {
     static let inactivePaneOpacity: Double = 0.92
 
     // MARK: - Terminal (SwiftTerm) colors
-    // 24-bit RGB. SwiftTerm's built-in default foreground is a ~54% gray
-    // (Color(35389,…)), which makes plain output look washed-out; we override it
-    // with a bright near-white and install a vibrant 16-color ANSI palette
-    // (8 normal + 8 bright) tuned to the Emerald accent so program output pops.
+    // Foreground, cursor, link, and ANSI 0–15 mirror iTerm2's dark defaults from
+    // `plists/DefaultBookmark.plist`. Keep mTerm's background matched to its deck
+    // so the embedded terminal does not appear as a differently colored rectangle.
 
-    static let terminalForeground: UInt32 = 0xBBBEC2  // primary text (E7EAF0 dimmed ~19%)
-    static let terminalBackground: UInt32 = 0x0A0C0F  // matches the pane deck
-    static let terminalCaret: UInt32 = 0xBBBEC2
-    // Match the lavender links emitted by Claude; Command-hover then reveals a
-    // stronger blue without making resting OSC 8 labels look like plain text.
-    static let terminalLinkForeground: UInt32 = 0xBFC7F6
-    static let terminalLinkHighlight: UInt32 = 0x69A3EC
+    static let terminalForeground: UInt32 = 0xDCDCDC
+    static let terminalBackground: UInt32 = 0x0A0C0F
+    static let terminalCaret: UInt32 = 0xFFFFFF
+    static let terminalLinkForeground: UInt32 = 0xA7ABF2  // ANSI bright blue
+    static let terminalLinkHighlight: UInt32 = 0x328EEE    // iTerm2 dark link color
 
-    // Vibrant palette (~15% desaturated from the pure Tailwind hues so colors
-    // read calmer without going gray). 8 normal + 8 bright.
+    // iTerm2 dark ANSI palette: 8 normal + 8 bright.
     static let ansiPalette: [UInt32] = [
-        0x1B1E23,  // 0  black    (lifted so black-on-bg stays visible)
-        0xEA7777,  // 1  red
-        0x44CB9A,  // 2  green    (emerald accent)
-        0xF2BF3B,  // 3  yellow
-        0x69A3EC,  // 4  blue
-        0xBC89EF,  // 5  magenta
-        0x87D0F3,  // 6  cyan
-        0xE7EAEF,  // 7  white
-        0x575E68,  // 8  bright black
-        0xF3A9A9,  // 9  bright red
-        0x7AE1B8,  // 10 bright green
-        0xF5D361,  // 11 bright yellow
-        0x99C4F3,  // 12 bright blue
-        0xD5B7F6,  // 13 bright magenta
-        0xBFE4F8,  // 14 bright cyan
+        0x14191E,  // 0  black
+        0xB43C2A,  // 1  red
+        0x00C200,  // 2  green
+        0xC7C400,  // 3  yellow
+        0x2744C7,  // 4  blue
+        0xC040BE,  // 5  magenta
+        0x00C5C7,  // 6  cyan
+        0xC7C7C7,  // 7  white
+        0x686868,  // 8  bright black
+        0xDD7975,  // 9  bright red
+        0x58E790,  // 10 bright green
+        0xECE100,  // 11 bright yellow
+        0xA7ABF2,  // 12 bright blue
+        0xE17EE1,  // 13 bright magenta
+        0x60FDFF,  // 14 bright cyan
         0xFFFFFF,  // 15 bright white
     ]
 }
