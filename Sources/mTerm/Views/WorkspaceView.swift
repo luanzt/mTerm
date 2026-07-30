@@ -424,47 +424,30 @@ private struct SessionReorderDropDelegate: DropDelegate {
 }
 
 /// The sidebar row's leading icon. Two distinct looks:
-/// - default: a dark-filled disc with a light `>_` prompt glyph (a terminal), the
-///   glyph dimmed once the session has exited;
-/// - Claude running: the orange Claude sunburst, standing directly on the row with
-///   no backing disc.
+/// - default: the small green running dot (dimmed once the session has exited);
+/// - Claude running: the orange squircle app-mark with a white Claude sunburst.
 private struct SessionStatusIcon: View {
     let status: SessionRecord.Status
     let isClaude: Bool
 
     var body: some View {
-        if isClaude {
-            ClaudeMark()
-                .fill(MTermTheme.claude)
-                .frame(width: 16, height: 16)
-        } else {
-            ZStack {
-                Circle().fill(MTermTheme.iconTerminalBg)
-                TerminalGlyph()
-                    .stroke(status == .running ? MTermTheme.iconTerminalGlyph : MTermTheme.dim2,
-                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                    .frame(width: 9.5, height: 9.5)
+        ZStack {
+            if isClaude {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(MTermTheme.claude)
+                    .frame(width: 17, height: 17)
+                ClaudeMark()
+                    .fill(.white)
+                    .frame(width: 11, height: 11)
+            } else {
+                Circle()
+                    .fill(status == .running ? MTermTheme.accent : MTermTheme.dim2)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: status == .running ? MTermTheme.accent.opacity(0.7) : .clear,
+                            radius: 3)
             }
-            .frame(width: 18, height: 18)
-            .shadow(color: .black.opacity(0.35), radius: 1.5, y: 0.5)
         }
-    }
-}
-
-/// The `>_` shell-prompt motif (chevron + cursor underscore), drawn as strokes so
-/// it stays crisp at icon size.
-struct TerminalGlyph: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        let w = r.width, h = r.height
-        // ">" chevron
-        p.move(to: CGPoint(x: r.minX + w * 0.14, y: r.minY + h * 0.16))
-        p.addLine(to: CGPoint(x: r.minX + w * 0.56, y: r.midY))
-        p.addLine(to: CGPoint(x: r.minX + w * 0.14, y: r.minY + h * 0.84))
-        // "_" cursor
-        p.move(to: CGPoint(x: r.minX + w * 0.52, y: r.minY + h * 0.86))
-        p.addLine(to: CGPoint(x: r.minX + w * 0.92, y: r.minY + h * 0.86))
-        return p
+        .frame(width: 18, height: 18)
     }
 }
 

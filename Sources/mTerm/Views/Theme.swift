@@ -26,11 +26,7 @@ enum MTermTheme {
     static let path = Color(hex: 0x7DD3FC)    // cyan — working-dir paths
     static let prompt = Color(hex: 0x6EE7B7)  // shell prompt green
     static let danger = Color(hex: 0xF87171)  // close / exited
-    static let claude = Color(hex: 0xD97757)  // Claude terracotta — running-claude icon
-
-    // Sidebar session icons
-    static let iconTerminalBg = Color(hex: 0x2A2F3A)  // dark disc behind the >_ glyph
-    static let iconTerminalGlyph = Color(hex: 0xE7EAF0)  // the >_ prompt strokes
+    static let claude = Color(hex: 0xD97757)  // Claude terracotta — running-claude icon bg
 
     // Effects
     static let glow = Color(hex: 0x34D399).opacity(0.14)   // focused pane halo
