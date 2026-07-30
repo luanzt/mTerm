@@ -52,7 +52,7 @@ private struct WorkspaceSidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     sidebarAction("New terminal", icon: "plus") {
-                        workspace.createSession()
+                        workspace.createSession(asNewPane: NSEvent.modifierFlags.contains(.command))
                     }
                     sidebarSection("OPEN SESSIONS") {
                         ForEach(workspace.sessions.filter { $0.workspaceID == nil }) { session in
@@ -190,7 +190,7 @@ private struct WorkspaceFolderRow: View {
                     .background(Circle().fill(MTermTheme.accent.opacity(0.16)))
             }
             Button {
-                workspace.createSession(in: folder)
+                workspace.createSession(in: folder, asNewPane: NSEvent.modifierFlags.contains(.command))
             } label: {
                 Image(systemName: "plus")
                     .font(.caption.weight(.semibold))

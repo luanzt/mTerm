@@ -45,6 +45,27 @@ struct PaneGrid: Equatable {
         return zones
     }
 
+    /// Adds a brand-new pane in its own slot without displacing existing panes.
+    /// Prefers a new column on the right (while under the column cap); otherwise
+    /// splits the first single-pane column into two rows. Returns `false` when the
+    /// grid is completely full (every column already holds two panes).
+    @discardableResult
+    mutating func addPane(_ id: UUID) -> Bool {
+        if paneIDs.contains(id) { return true }
+        if columns.count < Self.maxColumns {
+            columns.append(GridColumn(panes: [id]))
+            normalizeWidths()
+            enforceInvariants()
+            return true
+        }
+        if let idx = columns.firstIndex(where: { $0.panes.count == 1 }) {
+            columns[idx].panes.append(id)
+            enforceInvariants()
+            return true
+        }
+        return false
+    }
+
     mutating func place(_ dragged: UUID, onPaneWith target: UUID, zone: DropZone) {
         guard location(of: target) != nil else { return }
         if dragged == target { return }

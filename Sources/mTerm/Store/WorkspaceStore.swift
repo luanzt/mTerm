@@ -45,10 +45,10 @@ final class WorkspaceStore: ObservableObject {
         grid.paneIDs.compactMap { id in sessions.first { $0.id == id } }
     }
 
-    func createSession() {
+    func createSession(asNewPane: Bool = false) {
         let session = makeSession()
         sessions.append(session)
-        showInActivePane(session.id)
+        if asNewPane { showInNewPane(session.id) } else { showInActivePane(session.id) }
         persist()
     }
 
@@ -122,10 +122,10 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    func createSession(in workspace: WorkspaceFolder) {
+    func createSession(in workspace: WorkspaceFolder, asNewPane: Bool = false) {
         let session = makeSession(workingDirectory: workspace.path, workspaceID: workspace.id)
         sessions.append(session)
-        showInActivePane(session.id)
+        if asNewPane { showInNewPane(session.id) } else { showInActivePane(session.id) }
         persist()
     }
 
@@ -241,6 +241,22 @@ final class WorkspaceStore: ObservableObject {
         guard let target = activePaneSessionID else { openSingle(id); return }
         grid.place(id, onPaneWith: target, zone: .center)
         selectedSessionID = id
+    }
+
+    /// Show `id` as a **separate** pane without displacing the focused one: a new
+    /// column on the right while under the column cap, otherwise a row split of the
+    /// first single-pane column. Falls back to replacing the active pane when the
+    /// grid is completely full, and to a single-pane view when the grid is empty.
+    private func showInNewPane(_ id: SessionRecord.ID) {
+        guard sessions.contains(where: { $0.id == id }) else { return }
+        savedGrid = nil
+        if grid.paneIDs.contains(id) { selectedSessionID = id; return }
+        if grid.isEmpty { openSingle(id); return }
+        if grid.addPane(id) {
+            selectedSessionID = id
+        } else {
+            showInActivePane(id)   // grid full: fall back to replacing the active pane
+        }
     }
 
     /// Sidebar tap: open `id` in the pane under the cursor without leaving the
