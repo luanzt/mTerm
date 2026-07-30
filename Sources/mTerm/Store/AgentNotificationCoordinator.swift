@@ -32,24 +32,34 @@ final class AgentNotificationCoordinator: NSObject, UNUserNotificationCenterDele
 
     var onOpenSession: ((SessionID) -> Void)?
 
-    private let center: UNUserNotificationCenter
+    /// UserNotifications requires a real application bundle registered with
+    /// LaunchServices. `swift run` executes the binary directly from `.build`,
+    /// where `UNUserNotificationCenter.current()` raises an Objective-C
+    /// exception instead of returning an unavailable center.
+    private let center: UNUserNotificationCenter?
     private var authorizationRequestedThisLaunch = false
     private var authorizationDeferredUntilActive = false
 
-    init(center: UNUserNotificationCenter = .current()) {
+    override init() {
+        center = Self.currentCenterIfAvailable()
+        super.init()
+    }
+
+    init(center: UNUserNotificationCenter?) {
         self.center = center
         super.init()
     }
 
     /// Must run before notifications can be interacted with.
     func start() {
-        center.delegate = self
+        center?.delegate = self
     }
 
     /// Ask when the user first starts a supported agent, rather than surprising
     /// them at app launch. If it was started while mTerm is in the background,
     /// defer the system prompt until the app is active again.
     func prepareAuthorization() {
+        guard let center else { return }
         guard !authorizationRequestedThisLaunch else { return }
         if !NSApp.isActive {
             authorizationDeferredUntilActive = true
@@ -77,6 +87,7 @@ final class AgentNotificationCoordinator: NSObject, UNUserNotificationCenterDele
         _ attention: AgentAttention,
         from session: SessionRecord
     ) {
+        guard let center else { return }
         guard !NSApp.isActive else { return }
 
         let identifier = Self.identifier(for: session.id)
@@ -124,5 +135,15 @@ final class AgentNotificationCoordinator: NSObject, UNUserNotificationCenterDele
 
     private static func identifier(for id: SessionID) -> String {
         "com.luanzt.mterm.agent-attention.\(id.uuidString)"
+    }
+
+    private static func currentCenterIfAvailable(
+        bundle: Bundle = .main
+    ) -> UNUserNotificationCenter? {
+        guard bundle.bundleURL.pathExtension.caseInsensitiveCompare("app") == .orderedSame,
+              bundle.bundleIdentifier != nil else {
+            return nil
+        }
+        return .current()
     }
 }

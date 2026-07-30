@@ -2,6 +2,22 @@ import XCTest
 @testable import mTerm
 
 final class ThemeTests: XCTestCase {
+    func testAgentLogoPathsRenderInsideTheirFrames() {
+        let frame = CGRect(x: 10, y: 20, width: 48, height: 24)
+
+        for path in [
+            ClaudeLogo().path(in: frame),
+            OpenAILogo().path(in: frame),
+        ] {
+            let bounds = path.boundingRect
+            XCTAssertFalse(bounds.isEmpty)
+            XCTAssertGreaterThanOrEqual(bounds.minX, frame.minX)
+            XCTAssertGreaterThanOrEqual(bounds.minY, frame.minY)
+            XCTAssertLessThanOrEqual(bounds.maxX, frame.maxX)
+            XCTAssertLessThanOrEqual(bounds.maxY, frame.maxY)
+        }
+    }
+
     func testTerminalColorsMatchITermDarkDefaults() {
         XCTAssertEqual(MTermTheme.terminalForeground, 0xDCDCDC)
         XCTAssertEqual(MTermTheme.terminalCaret, 0xFFFFFF)

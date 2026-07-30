@@ -27,6 +27,8 @@ enum MTermTheme {
     static let prompt = Color(hex: 0x6EE7B7)  // shell prompt green
     static let danger = Color(hex: 0xF87171)  // close / exited
     static let claude = Color(hex: 0xD97757)  // Claude terracotta — running-claude icon bg
+    static let codexBackground = Color(hex: 0xFFFFFF)  // Codex icon tile
+    static let codexMark = Color(hex: 0x000000)        // OpenAI knot
 
     // Effects
     static let glow = Color(hex: 0x34D399).opacity(0.14)   // focused pane halo

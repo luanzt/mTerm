@@ -125,6 +125,12 @@ not synonymous with "needs attention"), output regexes, process polling, or a
 quiet-time heuristic. Keep the OSC parser restricted to mTerm's marker and known
 enum values so arbitrary terminal programs cannot forge these alerts.
 
+`swift run` executes an unbundled binary from `.build`, where
+`UNUserNotificationCenter.current()` raises an Objective-C exception because
+LaunchServices has no application bundle proxy. The notification coordinator
+must remain a safe no-op in that mode; packaged `.app` launches retain native
+notification authorization, delivery, and click-through.
+
 #### Codex CLI
 
 `CodexIntegration.writeFiles()` creates a `codex` PATH shim under
@@ -146,7 +152,9 @@ while shell integration says `codex` is the pane's foreground command. The
 Codex-supplied message is validated but deliberately not copied into
 Notification Center: it may contain assistant text, a command, or a file path.
 The native alert uses a privacy-safe generic summary and still routes back to
-the exact pane when clicked.
+the exact pane when clicked. The same foreground-command state swaps both the
+sidebar and pane-header running dots for the white OpenAI app mark while Codex
+is active. Claude uses its terracotta app mark in those same two locations.
 
 ### Theme
 

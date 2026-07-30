@@ -16,11 +16,12 @@ final class WorkspaceStore: ObservableObject {
     /// target pane when opening a session or creating a terminal from the sidebar.
     @Published var hoveredSessionID: SessionRecord.ID?
     /// Sessions whose pane currently has `claude` as its foreground command,
-    /// reported via shell integration (see `setForeground`). Drives the sidebar
-    /// icon swap.
+    /// reported via shell integration (see `setForeground`). Drives the agent
+    /// icon swap in the sidebar and pane header.
     @Published private(set) var claudeSessionIDs: Set<SessionRecord.ID> = []
-    /// Sessions whose foreground command is the Codex CLI. Used to request
-    /// notification permission in context and to clear state on session close.
+    /// Sessions whose foreground command is the Codex CLI. Drives the agent
+    /// icon in the sidebar and pane header, requests notification permission in
+    /// context, and clears on close.
     @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
@@ -211,8 +212,9 @@ final class WorkspaceStore: ObservableObject {
     }
 
     /// Reported by shell integration when a pane's foreground command changes.
-    /// `"claude"` marks the row; any other command (or `nil` for an idle prompt)
-    /// clears it. Publishes only on an actual change.
+    /// `"claude"` or `"codex"` marks the row with the matching agent icon; any
+    /// other command (or `nil` for an idle prompt) clears it. Publishes only on
+    /// an actual change.
     func setForeground(_ id: SessionRecord.ID, command: String?) {
         let isClaude = command == "claude"
         if isClaude, !claudeSessionIDs.contains(id) {
