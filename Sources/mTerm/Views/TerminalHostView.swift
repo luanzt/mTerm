@@ -105,7 +105,13 @@ struct TerminalHostView: NSViewRepresentable {
            context.coordinator.lastFileDropID != request.id {
             context.coordinator.lastFileDropID = request.id
             nsView.window?.makeFirstResponder(nsView)
-            nsView.send(txt: TerminalFileDrop.shellInput(for: request.urls))
+            let bracketedPaste = nsView.getTerminal().bracketedPasteMode
+            for chunk in TerminalFileDrop.terminalInputChunks(
+                for: request.urls,
+                bracketedPaste: bracketedPaste
+            ) {
+                nsView.send(chunk)
+            }
         }
 
         // Give keyboard focus to the selected pane's terminal so typing works
@@ -156,6 +162,23 @@ enum TerminalFileDrop {
     static func shellInput(for urls: [URL]) -> String {
         guard !urls.isEmpty else { return "" }
         return urls.map { shellEscape($0.path) }.joined(separator: " ") + " "
+    }
+
+    /// Programs such as Codex and Claude enable bracketed-paste mode so they can
+    /// distinguish pasted paths from ordinary typing. Emit one paste event per
+    /// file: image-aware TUIs can attach several images independently, while
+    /// shells still receive the same escaped paths and trailing spaces.
+    static func terminalInputChunks(for urls: [URL], bracketedPaste: Bool) -> [[UInt8]] {
+        guard !urls.isEmpty else { return [] }
+        guard bracketedPaste else {
+            return [Array(shellInput(for: urls).utf8)]
+        }
+
+        return urls.map { url in
+            EscapeSequences.bracketedPasteStart
+                + Array(shellInput(for: [url]).utf8)
+                + EscapeSequences.bracketedPasteEnd
+        }
     }
 
     /// Mirrors iTerm2's default dropped-filename style: keep ordinary paths

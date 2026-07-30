@@ -51,4 +51,51 @@ final class TerminalFileDropTests: XCTestCase {
 
         XCTAssertFalse(TerminalFileDrop.shellInput(for: [url]).contains("\n"))
     }
+
+    func testBracketedPasteMarksDroppedPathAsPaste() {
+        let url = URL(fileURLWithPath: "/tmp/screenshot.png")
+
+        let chunks = TerminalFileDrop.terminalInputChunks(
+            for: [url],
+            bracketedPaste: true
+        )
+
+        XCTAssertEqual(chunks.count, 1)
+        XCTAssertEqual(
+            String(decoding: chunks[0], as: UTF8.self),
+            "\u{1B}[200~/tmp/screenshot.png \u{1B}[201~"
+        )
+    }
+
+    func testBracketedPasteEmitsOneEventPerDroppedImage() {
+        let urls = [
+            URL(fileURLWithPath: "/tmp/one.png"),
+            URL(fileURLWithPath: "/tmp/two.jpg"),
+        ]
+
+        let chunks = TerminalFileDrop.terminalInputChunks(
+            for: urls,
+            bracketedPaste: true
+        )
+
+        XCTAssertEqual(chunks.count, 2)
+    }
+
+    func testPlainTerminalReceivesDroppedPathsAsOneChunk() {
+        let urls = [
+            URL(fileURLWithPath: "/tmp/one.png"),
+            URL(fileURLWithPath: "/tmp/two.jpg"),
+        ]
+
+        let chunks = TerminalFileDrop.terminalInputChunks(
+            for: urls,
+            bracketedPaste: false
+        )
+
+        XCTAssertEqual(chunks.count, 1)
+        XCTAssertEqual(
+            String(decoding: chunks[0], as: UTF8.self),
+            "/tmp/one.png /tmp/two.jpg "
+        )
+    }
 }

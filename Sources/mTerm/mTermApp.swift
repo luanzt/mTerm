@@ -68,6 +68,34 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private func installMainMenu() {
         let mainMenu = NSMenu()
 
+        // Application — macOS does not synthesize this menu because mTerm builds
+        // its NSMenu tree manually. In particular, the standard ⌘Q shortcut only
+        // exists when an item targeting NSApplication.terminate(_:) is present.
+        let applicationMenu = NSMenu(title: "mTerm")
+        applicationMenu.addItem(
+            NSMenuItem(title: "About mTerm",
+                       action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                       keyEquivalent: ""))
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(menuItem("Hide mTerm", #selector(NSApplication.hide(_:)), "h"))
+
+        let hideOthers = menuItem(
+            "Hide Others",
+            #selector(NSApplication.hideOtherApplications(_:)),
+            "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        applicationMenu.addItem(hideOthers)
+        applicationMenu.addItem(
+            NSMenuItem(title: "Show All",
+                       action: #selector(NSApplication.unhideAllApplications(_:)),
+                       keyEquivalent: ""))
+        applicationMenu.addItem(.separator())
+
+        let quitItem = menuItem("Quit mTerm", #selector(NSApplication.terminate(_:)), "q")
+        quitItem.target = NSApp
+        applicationMenu.addItem(quitItem)
+        addSubmenu(applicationMenu, to: mainMenu)
+
         // Edit — Copy / Paste / Select All route through the responder chain
         // (nil target) to the focused terminal view, which implements them.
         let editMenu = NSMenu(title: "Edit")
