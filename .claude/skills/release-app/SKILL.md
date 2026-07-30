@@ -5,8 +5,9 @@ description: Use when publishing a new mTerm release — cutting a version, buil
 
 # release-app
 
-Cut a new mTerm release: build the distributable, tag it, and publish a GitHub
-Release with the `.dmg` attached. Wraps `scripts/package.sh` + `gh`.
+Cut a new mTerm release: build the distributable, generate its signed Sparkle
+feed, tag it, and publish a GitHub Release with the `.dmg` attached. Wraps
+`scripts/package.sh`, `scripts/generate-appcast.sh`, and `gh`.
 
 ## Preflight (verify before doing anything)
 
@@ -15,6 +16,10 @@ Release with the `.dmg` attached. Wraps `scripts/package.sh` + `gh`.
 2. `git rev-parse --abbrev-ref HEAD` — should be `main`. Warn if not.
 3. `git push` any unpushed commits on the branch first.
 4. `gh auth status` — must be logged in.
+5. Sparkle's `mterm-ed25519` EdDSA private key must be available in the macOS
+   Keychain. Verify
+   `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account mterm-ed25519 -p`
+   prints `LzG6J9ahpYdZHqj/wzaotCscwjxGcVnN6zfv10dqqsU=`.
 
 ## Choose the version
 
@@ -26,27 +31,42 @@ Release with the `.dmg` attached. Wraps `scripts/package.sh` + `gh`.
 
 ## Publish
 
-Run in order — **build first**, so a failed build never leaves a dangling tag:
+Run in order — **build and generate the signed appcast first**, so a failed
+build or missing signing key never leaves a dangling tag:
 
 ```bash
 ./scripts/package.sh <version>          # → build/mTerm-<version>.dmg
+./scripts/generate-appcast.sh <version> # → build/appcast.xml
 git tag v<version>
 git push origin v<version>
 gh release create v<version> build/mTerm-<version>.dmg --generate-notes
 ```
 
-Then report the release URL (`gh release view v<version> --web` opens it).
+After the release asset exists, publish the prepared feed:
+
+```bash
+cp build/appcast.xml appcast.xml
+git add appcast.xml
+git commit -m "Update appcast for v<version>"
+git push origin main
+```
+
+When Codex creates the appcast commit, include the required
+`Co-authored-by: Codex <codex@openai.com>` trailer. Then verify the release URL,
+asset, and that the raw `main/appcast.xml` enclosure points to the new asset.
 
 ## Rules
 
 - **Confirm with the user before `gh release create`** — a GitHub release is
   public and outward-facing. State the version and that it will be published.
-- The `.dmg` is **unsigned / not notarized**. Don't claim otherwise. First-open
-  needs right-click ▸ Open. (Add notarization to `package.sh` before promising a
-  clean install.)
+- The app is **ad-hoc code-signed / not notarized**. The DMG has a Sparkle EdDSA
+  signature in the appcast, but that is not Apple notarization. Don't claim
+  otherwise. First manual install needs right-click ▸ Open.
 - If the build fails, stop — do **not** create the tag or the release.
+- If appcast generation or signature verification fails, stop — do **not**
+  create the tag or the release.
 - If the user only wants source (no binary), skip `package.sh` and drop the
-  `.dmg` arg from `gh release create`.
+  `.dmg` arg from `gh release create`; do not update the appcast.
 
 ## Rollback (if published by mistake)
 

@@ -259,6 +259,33 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSessionID, a)
     }
 
+    func testShortcutNumberMatchesVisualPaneOrder() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.createSession()
+        let c = store.sessions[2].id
+
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)   // [a][b]
+        store.place(c, onPaneWith: a, zone: .bottom)  // [a,c][b]
+
+        XCTAssertEqual(store.shortcutNumber(for: a), 1)
+        XCTAssertEqual(store.shortcutNumber(for: c), 2)
+        XCTAssertEqual(store.shortcutNumber(for: b), 3)
+    }
+
+    func testShortcutNumberIsNilForHiddenSession() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        store.createSession()
+        let hidden = store.sessions[0].id
+        let visible = store.sessions[1].id
+
+        XCTAssertNil(store.shortcutNumber(for: hidden))
+        XCTAssertEqual(store.shortcutNumber(for: visible), 1)
+    }
+
     // MARK: setForeground (shell integration icon state)
 
     func testSetForegroundTracksClaude() {

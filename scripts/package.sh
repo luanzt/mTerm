@@ -17,6 +17,8 @@ set -euo pipefail
 APP_NAME="mTerm"
 BUNDLE_ID="com.luanzt.mterm"
 MIN_MACOS="14.0"
+SPARKLE_FEED_URL="https://raw.githubusercontent.com/luanzt/mTerm/main/appcast.xml"
+SPARKLE_PUBLIC_KEY="LzG6J9ahpYdZHqj/wzaotCscwjxGcVnN6zfv10dqqsU="
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -30,13 +32,22 @@ DMG="$BUILD_DIR/$APP_NAME-$VERSION.dmg"
 
 echo "==> Building $APP_NAME $VERSION (release)"
 swift build -c release
-BIN="$(swift build -c release --show-bin-path)/$APP_NAME"
+BIN_DIR="$(swift build -c release --show-bin-path)"
+BIN="$BIN_DIR/$APP_NAME"
+SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
 [ -x "$BIN" ] || { echo "error: binary not found at $BIN" >&2; exit 1; }
+[ -d "$SPARKLE_FRAMEWORK" ] || {
+    echo "error: Sparkle.framework not found at $SPARKLE_FRAMEWORK" >&2
+    exit 1
+}
 
 echo "==> Assembling $APP_NAME.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" \
+    "$APP/Contents/MacOS/$APP_NAME"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -54,6 +65,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>$MIN_MACOS</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>SUFeedURL</key><string>$SPARKLE_FEED_URL</string>
+    <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_KEY</string>
+    <key>SUEnableAutomaticChecks</key><false/>
 </dict>
 </plist>
 PLIST
@@ -67,7 +81,8 @@ if [ -f "$ROOT/packaging/AppIcon.icns" ]; then
 fi
 
 echo "==> Ad-hoc code-signing"
-codesign --force --deep --sign - "$APP"
+codesign --force --sign - "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> Building $(basename "$DMG")"
 STAGE="$BUILD_DIR/dmg-stage"

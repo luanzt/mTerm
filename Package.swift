@@ -14,13 +14,15 @@ let package = Package(
         // revision we used plus that one-line change. See luanzt/SwiftTerm@edev-no-reflow.
         .package(url: "https://github.com/luanzt/SwiftTerm.git",
                  revision: "7d05ba66b6770a88fd48c3fa1cdfa5d3a1657848"),
-
+        .package(url: "https://github.com/sparkle-project/Sparkle",
+                 exact: "2.9.4"),
     ],
     targets: [
         .executableTarget(
             name: "mTerm",
             dependencies: [
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ]),
         .testTarget(name: "mTermTests", dependencies: ["mTerm"]),
     ])

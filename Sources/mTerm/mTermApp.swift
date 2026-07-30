@@ -1,10 +1,15 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @MainActor
 final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
     private var window: NSWindow?
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
@@ -76,6 +81,12 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
             NSMenuItem(title: "About mTerm",
                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                        keyEquivalent: ""))
+        let checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: "")
+        checkForUpdatesItem.target = updaterController
+        applicationMenu.addItem(checkForUpdatesItem)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(menuItem("Hide mTerm", #selector(NSApplication.hide(_:)), "h"))
 

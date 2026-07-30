@@ -194,6 +194,13 @@ final class WorkspaceStore: ObservableObject {
         selectedSessionID = ids[index]
     }
 
+    /// The user-facing ⌘-number assigned to a visible pane. This uses the same
+    /// visual ordering as `focusGridPane(at:)`, so the header badge always
+    /// describes the shortcut that will actually focus the pane.
+    func shortcutNumber(for id: SessionRecord.ID) -> Int? {
+        grid.paneIDs.firstIndex(of: id).map { $0 + 1 }
+    }
+
     /// Reported by shell integration when a pane's foreground command changes.
     /// `"claude"` marks the row; any other command (or `nil` for an idle prompt)
     /// clears it. Publishes only on an actual change.

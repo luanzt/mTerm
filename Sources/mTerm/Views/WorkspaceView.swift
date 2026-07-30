@@ -773,6 +773,9 @@ private struct TerminalPane: View {
                 .foregroundStyle(MTermTheme.dim2)
                 .lineLimit(1)
             Spacer(minLength: 6)
+            if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
+                PaneShortcutBadge(number: shortcutNumber)
+            }
             PaneHeaderButton(icon: workspace.isMaximized
                                 ? "arrow.down.right.and.arrow.up.left"
                                 : "arrow.up.left.and.arrow.down.right",
@@ -813,6 +816,25 @@ private struct TerminalPane: View {
     // A focus accent only makes sense when more than one pane is on screen.
     private var showsFocusMarker: Bool {
         isFocused && workspace.grid.paneIDs.count > 1
+    }
+}
+
+private struct PaneShortcutBadge: View {
+    let number: Int
+
+    var body: some View {
+        Text("⌘\(number)")
+            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            .foregroundStyle(MTermTheme.dim)
+            .padding(.horizontal, 6)
+            .frame(height: 20)
+            .background(MTermTheme.control)
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(MTermTheme.controlBorder, lineWidth: 1)
+            }
+            .help("Switch to this pane (⌘\(number))")
     }
 }
 

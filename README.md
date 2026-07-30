@@ -101,10 +101,25 @@ swift test --filter WorkspaceStoreTests/testToggleMaximizeCollapsesThenRestoresL
 ./scripts/package.sh 1.2.3     # → build/mTerm-1.2.3.dmg
 ```
 
-The script does a release build, assembles `mTerm.app` (embedding
-`packaging/AppIcon.icns` if present), **ad-hoc code-signs** it so it launches on
-Apple Silicon, and packs it into a drag-to-Applications `.dmg`. The result is
-**not notarized** — see the first-launch note under [Install](#install).
+The script does a release build, assembles `mTerm.app` (embedding Sparkle and
+`packaging/AppIcon.icns` when the icon is present), **ad-hoc code-signs** it so
+it launches on Apple Silicon, and packs it into a drag-to-Applications `.dmg`.
+The result is **not notarized** — see the first-launch note under
+[Install](#install).
+
+Sparkle provides in-app updates for releases after `v1.1.2`. Its
+`mterm-ed25519` EdDSA private key lives in the maintainer's macOS Keychain; only
+the public key is embedded in the app. Generate the signed feed entry after
+packaging:
+
+```bash
+./scripts/generate-appcast.sh 1.2.3   # → build/appcast.xml
+```
+
+On another signing Mac, securely import the backed-up private seed into the
+same account with Sparkle's `generate_keys --account mterm-ed25519 -f …` tool.
+Do not generate a replacement key after a Sparkle-enabled release ships; losing
+this key would break the trusted in-app update chain.
 
 ### Cutting a release
 
@@ -112,9 +127,16 @@ Maintainers can use the bundled `release-app` skill (or run the steps manually):
 
 ```bash
 ./scripts/package.sh <version>
+./scripts/generate-appcast.sh <version>
 git tag v<version> && git push origin v<version>
 gh release create v<version> build/mTerm-<version>.dmg --generate-notes
+cp build/appcast.xml appcast.xml
+git add appcast.xml && git commit -m "Update appcast for v<version>" && git push
 ```
+
+The feed is published only after the GitHub asset exists. Users upgrading from
+`v1.1.2` must install the first Sparkle-enabled release manually once; later
+releases can download, replace, and relaunch mTerm from inside the app.
 
 ---
 
@@ -123,6 +145,7 @@ gh release create v<version> build/mTerm-<version>.dmg --generate-notes
 | Piece | File | Role |
 |-------|------|------|
 | App boot | `Sources/mTerm/main.swift`, `mTermApp.swift` | Boots `NSApplication`, builds the menu, hosts SwiftUI in an `NSWindow` |
+| Updates | `mTermApp.swift`, `scripts/generate-appcast.sh` | Sparkle controller, signed release feed, in-app install/relaunch |
 | State | `Store/WorkspaceStore.swift` | Single `@MainActor` source of truth: sessions, workspaces, selection, the grid |
 | Layout model | `Models/PaneGrid.swift` | Pure value type: columns → panes, with drop-zone placement and self-healing invariants |
 | Rendering | `Views/WorkspaceView.swift` | Lays panes out by absolute frame + offset; parks hidden sessions off-screen |
