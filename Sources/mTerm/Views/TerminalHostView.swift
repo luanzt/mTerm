@@ -58,6 +58,13 @@ struct TerminalHostView: NSViewRepresentable {
         // environment, ensuring TERM is set for the pty.
         var base = ProcessInfo.processInfo.environment
         base["TERM"] = "xterm-256color"
+        // A pane is a fresh terminal, not a child of whatever launched mTerm. If
+        // mTerm was itself started from inside a Claude Code session, its process
+        // carries that session's markers (CLAUDECODE / CLAUDE_CODE_*); drop them so
+        // running `claude` in a pane isn't mistaken for a nested child session.
+        for key in base.keys where key == "CLAUDECODE" || key.hasPrefix("CLAUDE_CODE_") {
+            base.removeValue(forKey: key)
+        }
         let environment = ShellIntegration.childEnvironment(shell: shell, base: base)
         context.coordinator.startShell = { term in
             term.startProcess(executable: shell,
