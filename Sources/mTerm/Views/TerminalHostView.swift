@@ -13,6 +13,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports a trusted Claude Code Notification-hook event received by this
     /// pane's PTY through mTerm's private OSC 777 payload.
     var onClaudeAttention: (ClaudeIntegration.AttentionKind) -> Void = { _ in }
+    /// Reports Codex's built-in OSC 9 notification only while Codex is the
+    /// foreground process in this pane.
+    var onCodexAttention: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -45,8 +48,12 @@ struct TerminalHostView: NSViewRepresentable {
         let report = onForeground
         terminal.getTerminal().registerOscHandler(code: ShellIntegration.oscCode) { payload in
             switch ShellIntegration.parse(payload) {
-            case .run(let command): DispatchQueue.main.async { report(command) }
-            case .idle:             DispatchQueue.main.async { report(nil) }
+            case .run(let command):
+                context.coordinator.foregroundCommand = command
+                DispatchQueue.main.async { report(command) }
+            case .idle:
+                context.coordinator.foregroundCommand = nil
+                DispatchQueue.main.async { report(nil) }
             case nil:               break
             }
         }
@@ -54,6 +61,16 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.getTerminal().registerOscHandler(code: ClaudeIntegration.oscCode) { payload in
             guard let kind = ClaudeIntegration.parse(payload) else { return }
             DispatchQueue.main.async { reportAttention(kind) }
+        }
+        let reportCodexAttention = onCodexAttention
+        terminal.getTerminal().registerOscHandler(code: CodexIntegration.oscCode) { payload in
+            guard CodexIntegration.shouldReportAttention(
+                payload,
+                foregroundCommand: context.coordinator.foregroundCommand
+            ) else {
+                return
+            }
+            DispatchQueue.main.async { reportCodexAttention() }
         }
 
         // Start the shell the first time the view has a real (non-zero) size, so
@@ -153,6 +170,7 @@ struct TerminalHostView: NSViewRepresentable {
         var frameObserver: NSObjectProtocol?
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var lastFileDropID: UUID?
+        var foregroundCommand: String?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
             guard !didStartProcess,

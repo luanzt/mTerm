@@ -1,10 +1,33 @@
 import AppKit
 @preconcurrency import UserNotifications
 
+enum AgentAttention {
+    case claude(ClaudeIntegration.AttentionKind)
+    case codex
+
+    var notificationTitle: String {
+        switch self {
+        case .claude(let kind):
+            return kind.notificationTitle
+        case .codex:
+            return "Codex needs your attention"
+        }
+    }
+
+    var notificationBody: String {
+        switch self {
+        case .claude(let kind):
+            return kind.notificationBody
+        case .codex:
+            return "A turn finished or Codex is waiting for your input."
+        }
+    }
+}
+
 /// Owns macOS notification authorization, delivery, and click-through behavior.
-/// Claude events arrive on the main actor from the terminal's OSC handler.
+/// Agent events arrive on the main actor from the terminal's OSC handler.
 @MainActor
-final class ClaudeNotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
+final class AgentNotificationCoordinator: NSObject, UNUserNotificationCenterDelegate {
     typealias SessionID = SessionRecord.ID
 
     var onOpenSession: ((SessionID) -> Void)?
@@ -23,8 +46,8 @@ final class ClaudeNotificationCoordinator: NSObject, UNUserNotificationCenterDel
         center.delegate = self
     }
 
-    /// Ask when the user first starts Claude, rather than surprising them at app
-    /// launch. If Claude was started remotely while mTerm is in the background,
+    /// Ask when the user first starts a supported agent, rather than surprising
+    /// them at app launch. If it was started while mTerm is in the background,
     /// defer the system prompt until the app is active again.
     func prepareAuthorization() {
         guard !authorizationRequestedThisLaunch else { return }
@@ -51,16 +74,16 @@ final class ClaudeNotificationCoordinator: NSObject, UNUserNotificationCenterDel
     /// stable per pane: a newer "needs attention" event replaces stale state from
     /// the same terminal instead of stacking duplicate alerts.
     func deliver(
-        kind: ClaudeIntegration.AttentionKind,
+        _ attention: AgentAttention,
         from session: SessionRecord
     ) {
         guard !NSApp.isActive else { return }
 
         let identifier = Self.identifier(for: session.id)
         let content = UNMutableNotificationContent()
-        content.title = kind.notificationTitle
+        content.title = attention.notificationTitle
         content.subtitle = session.title
-        content.body = kind.notificationBody
+        content.body = attention.notificationBody
         content.sound = .default
         content.threadIdentifier = session.id.uuidString
         content.userInfo = ["sessionID": session.id.uuidString]
@@ -100,6 +123,6 @@ final class ClaudeNotificationCoordinator: NSObject, UNUserNotificationCenterDel
     }
 
     private static func identifier(for id: SessionID) -> String {
-        "com.luanzt.mterm.claude-attention.\(id.uuidString)"
+        "com.luanzt.mterm.agent-attention.\(id.uuidString)"
     }
 }

@@ -95,12 +95,14 @@ with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
 compact labels such as `#2761` with the URL embedded instead of printing a
 fallback `#2761 (https://…)`. Preserve an explicit `FORCE_HYPERLINK=0` opt-out.
 
-### Claude attention notifications
+### Agent attention notifications
 
-Claude notifications are event-driven, not inferred from terminal output or an
-idle timer:
+Agent notifications are event-driven, not inferred from rendered terminal
+output or an idle timer.
 
-1. `ClaudeIntegration.writeFiles()` creates a local plugin under
+#### Claude Code
+
+1. `ClaudeIntegration.writeFiles()` creates a local Claude plugin under
    `~/Library/Application Support/mTerm/claude-notifications`.
 2. The generated zsh startup file prepends a narrow `claude` executable shim to
    that pane's `PATH`. The shim preserves all CLI arguments and adds only
@@ -113,15 +115,38 @@ idle timer:
    `OSC 777;notify;mTerm Claude;<kind>` payload. It never includes prompt/tool
    content.
 4. `TerminalHostView` receives that OSC on the originating PTY and forwards it
-   with the pane's session ID. `ClaudeNotificationCoordinator` posts a native
+   with the pane's session ID. `AgentNotificationCoordinator` posts a native
    `UNUserNotificationCenter` alert only while `NSApp` is inactive. Clicking it
    activates mTerm and focuses/reopens the originating session.
 
-Authorization is requested in context, the first time Claude starts, rather
-than at app launch. Do not replace the hook with `Stop` (which is not synonymous
-with "needs attention"), output regexes, process polling, or a quiet-time
-heuristic. Keep the OSC parser restricted to mTerm's marker and known enum values
-so arbitrary terminal programs cannot forge these alerts.
+Authorization is requested in context the first time a supported agent starts,
+rather than at app launch. Do not replace the Claude hook with `Stop` (which is
+not synonymous with "needs attention"), output regexes, process polling, or a
+quiet-time heuristic. Keep the OSC parser restricted to mTerm's marker and known
+enum values so arbitrary terminal programs cannot forge these alerts.
+
+#### Codex CLI
+
+`CodexIntegration.writeFiles()` creates a `codex` PATH shim under
+`~/Library/Application Support/mTerm/codex-notifications`. The shim keeps the
+user's arguments and applies three invocation-only overrides:
+
+- `tui.notifications=true` enables Codex's built-in attention events, including
+  completed turns, approval requests, and interactive prompts.
+- `tui.notification_method="osc9"` makes the TUI emit its supported OSC 9
+  terminal notification instead of BEL.
+- `tui.notification_condition="always"` ensures mTerm receives events even
+  without terminal focus reporting. `AgentNotificationCoordinator` still
+  suppresses native notifications while `NSApp` is active.
+
+No `~/.codex/config.toml` setting is edited. A later user-supplied `-c` argument
+can override these defaults for an individual invocation. Because OSC 9 is a
+general terminal notification protocol, `TerminalHostView` accepts it only
+while shell integration says `codex` is the pane's foreground command. The
+Codex-supplied message is validated but deliberately not copied into
+Notification Center: it may contain assistant text, a command, or a file path.
+The native alert uses a privacy-safe generic summary and still routes back to
+the exact pane when clicked.
 
 ### Theme
 

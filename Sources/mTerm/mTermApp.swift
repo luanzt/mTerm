@@ -7,7 +7,7 @@ import SwiftUI
 final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
     private var window: NSWindow?
-    private lazy var claudeNotifications = ClaudeNotificationCoordinator()
+    private lazy var agentNotifications = AgentNotificationCoordinator()
     private var cancellables: Set<AnyCancellable> = []
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -15,14 +15,17 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         userDriverDelegate: nil)
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        claudeNotifications.start()
-        claudeNotifications.onOpenSession = { [weak self] sessionID in
+        agentNotifications.start()
+        agentNotifications.onOpenSession = { [weak self] sessionID in
             guard let self else { return }
             window?.makeKeyAndOrderFront(nil)
             workspace.openInActivePane(sessionID)
         }
         workspace.onClaudeAttention = { [weak self] session, kind in
-            self?.claudeNotifications.deliver(kind: kind, from: session)
+            self?.agentNotifications.deliver(.claude(kind), from: session)
+        }
+        workspace.onCodexAttention = { [weak self] session in
+            self?.agentNotifications.deliver(.codex, from: session)
         }
     }
 
@@ -57,12 +60,13 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
 
         // Ask for macOS notification permission in context, the first time this
-        // installation actually launches Claude inside mTerm.
+        // installation actually launches Claude or Codex inside mTerm.
         workspace.$claudeSessionIDs
-            .filter { !$0.isEmpty }
+            .combineLatest(workspace.$codexSessionIDs)
+            .filter { !$0.isEmpty || !$1.isEmpty }
             .first()
-            .sink { [weak self] _ in
-                self?.claudeNotifications.prepareAuthorization()
+            .sink { [weak self] _, _ in
+                self?.agentNotifications.prepareAuthorization()
             }
             .store(in: &cancellables)
 
@@ -70,7 +74,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        claudeNotifications.applicationDidBecomeActive()
+        agentNotifications.applicationDidBecomeActive()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

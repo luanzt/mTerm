@@ -303,6 +303,17 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.claudeSessionIDs.contains(a))
     }
 
+    func testSetForegroundTracksCodex() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let id = store.sessions[0].id
+
+        store.setForeground(id, command: "codex")
+        XCTAssertTrue(store.codexSessionIDs.contains(id))
+
+        store.setForeground(id, command: "git")
+        XCTAssertFalse(store.codexSessionIDs.contains(id))
+    }
+
     func testCloseClearsClaudeState() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         store.createSession()
@@ -311,6 +322,16 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertTrue(store.claudeSessionIDs.contains(b))
         store.close(store.session(for: b)!)
         XCTAssertFalse(store.claudeSessionIDs.contains(b))
+    }
+
+    func testCloseClearsCodexState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+        store.setForeground(session.id, command: "codex")
+
+        store.close(session)
+
+        XCTAssertFalse(store.codexSessionIDs.contains(session.id))
     }
 
     func testClaudeAttentionResolvesAndForwardsLiveSession() {
@@ -327,6 +348,22 @@ final class WorkspaceStoreTests: XCTestCase {
         store.close(session)
         received = nil
         store.reportClaudeAttention(session.id, kind: .idlePrompt)
+        XCTAssertNil(received)
+    }
+
+    func testCodexAttentionResolvesAndForwardsLiveSession() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+        var received: SessionRecord?
+        store.onCodexAttention = { received = $0 }
+
+        store.reportCodexAttention(session.id)
+
+        XCTAssertEqual(received, session)
+
+        store.close(session)
+        received = nil
+        store.reportCodexAttention(session.id)
         XCTAssertNil(received)
     }
 

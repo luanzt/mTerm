@@ -19,6 +19,9 @@ final class WorkspaceStore: ObservableObject {
     /// reported via shell integration (see `setForeground`). Drives the sidebar
     /// icon swap.
     @Published private(set) var claudeSessionIDs: Set<SessionRecord.ID> = []
+    /// Sessions whose foreground command is the Codex CLI. Used to request
+    /// notification permission in context and to clear state on session close.
+    @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
@@ -32,8 +35,9 @@ final class WorkspaceStore: ObservableObject {
     private var dragEndMonitor: Any?
 
     /// App-level side effects stay outside the store; the store resolves the
-    /// session before forwarding a trusted Claude attention event.
+    /// session before forwarding a trusted agent attention event.
     var onClaudeAttention: ((SessionRecord, ClaudeIntegration.AttentionKind) -> Void)?
+    var onCodexAttention: ((SessionRecord) -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -141,6 +145,7 @@ final class WorkspaceStore: ObservableObject {
         guard let index = sessions.firstIndex(of: session) else { return }
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
+        codexSessionIDs.remove(session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
         if selectedSessionID == session.id {
@@ -215,6 +220,13 @@ final class WorkspaceStore: ObservableObject {
         } else if !isClaude, claudeSessionIDs.contains(id) {
             claudeSessionIDs.remove(id)
         }
+
+        let isCodex = command == "codex"
+        if isCodex, !codexSessionIDs.contains(id) {
+            codexSessionIDs.insert(id)
+        } else if !isCodex, codexSessionIDs.contains(id) {
+            codexSessionIDs.remove(id)
+        }
     }
 
     func reportClaudeAttention(
@@ -223,6 +235,11 @@ final class WorkspaceStore: ObservableObject {
     ) {
         guard let session = session(for: id) else { return }
         onClaudeAttention?(session, kind)
+    }
+
+    func reportCodexAttention(_ id: SessionRecord.ID) {
+        guard let session = session(for: id) else { return }
+        onCodexAttention?(session)
     }
 
     func toggleSidebar() {

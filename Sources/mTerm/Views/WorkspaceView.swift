@@ -705,6 +705,9 @@ private struct TerminalPane: View {
                                  },
                                  onClaudeAttention: {
                                      workspace.reportClaudeAttention(session.id, kind: $0)
+                                 },
+                                 onCodexAttention: {
+                                     workspace.reportCodexAttention(session.id)
                                  })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)

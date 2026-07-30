@@ -127,6 +127,9 @@ enum ShellIntegration {
         if ClaudeIntegration.writeFiles() {
             env["MTERM_CLAUDE_SHIM_DIR"] = ClaudeIntegration.shimDirectory.path
         }
+        if CodexIntegration.writeFiles() {
+            env["MTERM_CODEX_SHIM_DIR"] = CodexIntegration.shimDirectory.path
+        }
         return flatten(env)
     }
 
@@ -205,12 +208,15 @@ enum ShellIntegration {
       add-zsh-hook precmd  _mterm_precmd  2>/dev/null
     fi
 
-    # Load mTerm's Claude notification plugin without changing user/project
-    # settings. Keep a user's function or alias precedence intact; ordinary
-    # executable lookup reaches this shim.
-    if [[ -n "$MTERM_CLAUDE_SHIM_DIR" && -x "$MTERM_CLAUDE_SHIM_DIR/claude" ]]; then
-      path=("$MTERM_CLAUDE_SHIM_DIR" ${path:#"$MTERM_CLAUDE_SHIM_DIR"})
-      export PATH
-    fi
+    # Load agent notification shims without changing user/project settings.
+    # Keep a user's function or alias precedence intact; ordinary executable
+    # lookup reaches the matching shim.
+    for _mterm_shim_dir in "$MTERM_CLAUDE_SHIM_DIR" "$MTERM_CODEX_SHIM_DIR"; do
+      if [[ -n "$_mterm_shim_dir" && -d "$_mterm_shim_dir" ]]; then
+        path=("$_mterm_shim_dir" ${path:#"$_mterm_shim_dir"})
+      fi
+    done
+    unset _mterm_shim_dir
+    export PATH
     """
 }

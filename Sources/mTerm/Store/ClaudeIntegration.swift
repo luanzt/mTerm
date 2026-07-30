@@ -181,5 +181,5 @@ enum ClaudeIntegration {
       exit 127
     fi
     exec "$real_claude" --plugin-dir "$plugin_dir" "$@"
-    """
+    """ + "\n"
 }
