@@ -95,6 +95,34 @@ with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
 compact labels such as `#2761` with the URL embedded instead of printing a
 fallback `#2761 (https://…)`. Preserve an explicit `FORCE_HYPERLINK=0` opt-out.
 
+### Claude attention notifications
+
+Claude notifications are event-driven, not inferred from terminal output or an
+idle timer:
+
+1. `ClaudeIntegration.writeFiles()` creates a local plugin under
+   `~/Library/Application Support/mTerm/claude-notifications`.
+2. The generated zsh startup file prepends a narrow `claude` executable shim to
+   that pane's `PATH`. The shim preserves all CLI arguments and adds only
+   `--plugin-dir`; it does not edit `~/.claude/settings.json`, and plugin hooks
+   merge with existing user/project hooks.
+3. The plugin listens to Claude Code's official `Notification` event for
+   `permission_prompt`, `idle_prompt`, `elicitation_dialog`,
+   `agent_needs_input`, and `agent_completed`. Its hook returns an allowlisted
+   `terminalSequence` containing the private
+   `OSC 777;notify;mTerm Claude;<kind>` payload. It never includes prompt/tool
+   content.
+4. `TerminalHostView` receives that OSC on the originating PTY and forwards it
+   with the pane's session ID. `ClaudeNotificationCoordinator` posts a native
+   `UNUserNotificationCenter` alert only while `NSApp` is inactive. Clicking it
+   activates mTerm and focuses/reopens the originating session.
+
+Authorization is requested in context, the first time Claude starts, rather
+than at app launch. Do not replace the hook with `Stop` (which is not synonymous
+with "needs attention"), output regexes, process polling, or a quiet-time
+heuristic. Keep the OSC parser restricted to mTerm's marker and known enum values
+so arbitrary terminal programs cannot forge these alerts.
+
 ### Theme
 
 `Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a

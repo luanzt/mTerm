@@ -30,6 +30,11 @@ pane-layout, updater, or release behavior.
 - Keep mTerm's child-process terminal identity and capability advertisement in
   `ShellIntegration.terminalBaseEnvironment`. OSC 8-capable CLI renderers rely
   on `FORCE_HYPERLINK=1`; preserve the user's explicit `0` opt-out.
+- Keep Claude attention notifications driven by Claude Code's official
+  `Notification` hook and allowlisted OSC 777 `terminalSequence`. The generated
+  local plugin must remain additive (no edits to user/project Claude settings),
+  payloads must not contain prompt/tool text, and native alerts must remain
+  background-only with click-through to the originating session.
 - Use `MTermTheme` rather than reintroducing system colors.
 
 ## Pane shortcuts

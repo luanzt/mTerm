@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Sparkle
 import SwiftUI
 
@@ -6,10 +7,24 @@ import SwiftUI
 final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
     private var window: NSWindow?
+    private lazy var claudeNotifications = ClaudeNotificationCoordinator()
+    private var cancellables: Set<AnyCancellable> = []
     private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
         userDriverDelegate: nil)
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        claudeNotifications.start()
+        claudeNotifications.onOpenSession = { [weak self] sessionID in
+            guard let self else { return }
+            window?.makeKeyAndOrderFront(nil)
+            workspace.openInActivePane(sessionID)
+        }
+        workspace.onClaudeAttention = { [weak self] session, kind in
+            self?.claudeNotifications.deliver(kind: kind, from: session)
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
@@ -41,7 +56,21 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
+        // Ask for macOS notification permission in context, the first time this
+        // installation actually launches Claude inside mTerm.
+        workspace.$claudeSessionIDs
+            .filter { !$0.isEmpty }
+            .first()
+            .sink { [weak self] _ in
+                self?.claudeNotifications.prepareAuthorization()
+            }
+            .store(in: &cancellables)
+
         NSRunningApplication.current.activate(options: [.activateAllWindows])
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        claudeNotifications.applicationDidBecomeActive()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

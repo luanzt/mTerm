@@ -124,6 +124,9 @@ enum ShellIntegration {
         env["MTERM_USER_ZDOTDIR"] = base["ZDOTDIR"] ?? base["HOME"]
             ?? FileManager.default.homeDirectoryForCurrentUser.path
         env["ZDOTDIR"] = integrationDirectory.path
+        if ClaudeIntegration.writeFiles() {
+            env["MTERM_CLAUDE_SHIM_DIR"] = ClaudeIntegration.shimDirectory.path
+        }
         return flatten(env)
     }
 
@@ -200,6 +203,14 @@ enum ShellIntegration {
       _mterm_precmd()  { printf '\\e]\(oscCode);idle\\a' }
       add-zsh-hook preexec _mterm_preexec 2>/dev/null
       add-zsh-hook precmd  _mterm_precmd  2>/dev/null
+    fi
+
+    # Load mTerm's Claude notification plugin without changing user/project
+    # settings. Keep a user's function or alias precedence intact; ordinary
+    # executable lookup reaches this shim.
+    if [[ -n "$MTERM_CLAUDE_SHIM_DIR" && -x "$MTERM_CLAUDE_SHIM_DIR/claude" ]]; then
+      path=("$MTERM_CLAUDE_SHIM_DIR" ${path:#"$MTERM_CLAUDE_SHIM_DIR"})
+      export PATH
     fi
     """
 }

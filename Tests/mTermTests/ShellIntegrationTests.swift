@@ -74,6 +74,7 @@ final class ShellIntegrationTests: XCTestCase {
         XCTAssertEqual(map["ZDOTDIR"], ShellIntegration.integrationDirectory.path)
         XCTAssertEqual(map["MTERM_USER_ZDOTDIR"], "/Users/test")
         XCTAssertEqual(map[ShellIntegration.marker], "1")
+        XCTAssertEqual(map["MTERM_CLAUDE_SHIM_DIR"], ClaudeIntegration.shimDirectory.path)
         XCTAssertEqual(map["PATH"], "/usr/bin")   // base preserved
     }
 
@@ -104,6 +105,7 @@ final class ShellIntegrationTests: XCTestCase {
         XCTAssertTrue(zshrc.contains("source"))                 // re-sources user config
         XCTAssertTrue(zshrc.contains("add-zsh-hook preexec"))   // installs hooks
         XCTAssertTrue(zshrc.contains("\(ShellIntegration.oscCode);run;"))
+        XCTAssertTrue(zshrc.contains("MTERM_CLAUDE_SHIM_DIR"))
     }
 
     private func dictionary(from env: [String]) -> [String: String] {

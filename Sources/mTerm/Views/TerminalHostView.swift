@@ -10,6 +10,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
+    /// Reports a trusted Claude Code Notification-hook event received by this
+    /// pane's PTY through mTerm's private OSC 777 payload.
+    var onClaudeAttention: (ClaudeIntegration.AttentionKind) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -46,6 +49,11 @@ struct TerminalHostView: NSViewRepresentable {
             case .idle:             DispatchQueue.main.async { report(nil) }
             case nil:               break
             }
+        }
+        let reportAttention = onClaudeAttention
+        terminal.getTerminal().registerOscHandler(code: ClaudeIntegration.oscCode) { payload in
+            guard let kind = ClaudeIntegration.parse(payload) else { return }
+            DispatchQueue.main.async { reportAttention(kind) }
         }
 
         // Start the shell the first time the view has a real (non-zero) size, so

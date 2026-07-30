@@ -313,6 +313,23 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.claudeSessionIDs.contains(b))
     }
 
+    func testClaudeAttentionResolvesAndForwardsLiveSession() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+        var received: (SessionRecord, ClaudeIntegration.AttentionKind)?
+        store.onClaudeAttention = { received = ($0, $1) }
+
+        store.reportClaudeAttention(session.id, kind: .permissionPrompt)
+
+        XCTAssertEqual(received?.0, session)
+        XCTAssertEqual(received?.1, .permissionPrompt)
+
+        store.close(session)
+        received = nil
+        store.reportClaudeAttention(session.id, kind: .idlePrompt)
+        XCTAssertNil(received)
+    }
+
     func testClosingWhileMaximizedEndsMaximizeState() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let a = store.sessions[0].id

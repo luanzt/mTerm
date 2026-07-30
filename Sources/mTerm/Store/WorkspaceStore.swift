@@ -31,6 +31,10 @@ final class WorkspaceStore: ObservableObject {
     private let defaults: UserDefaults
     private var dragEndMonitor: Any?
 
+    /// App-level side effects stay outside the store; the store resolves the
+    /// session before forwarding a trusted Claude attention event.
+    var onClaudeAttention: ((SessionRecord, ClaudeIntegration.AttentionKind) -> Void)?
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         sessions = [SessionRecord.shell()]
@@ -211,6 +215,14 @@ final class WorkspaceStore: ObservableObject {
         } else if !isClaude, claudeSessionIDs.contains(id) {
             claudeSessionIDs.remove(id)
         }
+    }
+
+    func reportClaudeAttention(
+        _ id: SessionRecord.ID,
+        kind: ClaudeIntegration.AttentionKind
+    ) {
+        guard let session = session(for: id) else { return }
+        onClaudeAttention?(session, kind)
     }
 
     func toggleSidebar() {

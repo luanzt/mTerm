@@ -700,7 +700,12 @@ private struct TerminalPane: View {
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
                                  fileDropRequest: fileDropRequest,
-                                 onForeground: { workspace.setForeground(session.id, command: $0) })
+                                 onForeground: {
+                                     workspace.setForeground(session.id, command: $0)
+                                 },
+                                 onClaudeAttention: {
+                                     workspace.reportClaudeAttention(session.id, kind: $0)
+                                 })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
             }
