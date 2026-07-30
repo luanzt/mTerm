@@ -5,6 +5,8 @@ import Foundation
 
 @MainActor
 final class WorkspaceStore: ObservableObject {
+    typealias CodexTitleLookup = @Sendable (UUID) async -> String?
+
     @Published private(set) var sessions: [SessionRecord]
     @Published private(set) var workspaces: [WorkspaceFolder]
     @Published var selectedSessionID: SessionRecord.ID?
@@ -23,6 +25,10 @@ final class WorkspaceStore: ObservableObject {
     /// icon in the sidebar and pane header, requests notification permission in
     /// context, and clears on close.
     @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
+    /// Validated OSC 0/2 titles emitted by active Claude/Codex processes. Kept
+    /// separately so each session's stable "Terminal N" title is restored when
+    /// shell integration reports that the pane is idle again.
+    @Published private(set) var agentSessionTitles: [SessionRecord.ID: String] = [:]
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
@@ -33,15 +39,24 @@ final class WorkspaceStore: ObservableObject {
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
     private let defaults: UserDefaults
+    private let codexTitleLookup: CodexTitleLookup
     private var dragEndMonitor: Any?
+    private var codexTitleResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
+    private var codexThreadIDs: [SessionRecord.ID: UUID] = [:]
 
     /// App-level side effects stay outside the store; the store resolves the
     /// session before forwarding a trusted agent attention event.
     var onClaudeAttention: ((SessionRecord, ClaudeIntegration.AttentionKind) -> Void)?
     var onCodexAttention: ((SessionRecord) -> Void)?
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        codexTitleLookup: @escaping CodexTitleLookup = {
+            await CodexThreadTitleResolver.title(for: $0)
+        }
+    ) {
         self.defaults = defaults
+        self.codexTitleLookup = codexTitleLookup
         sessions = [SessionRecord.shell()]
         defaults.removeObject(forKey: sessionsKey)   // dọn state cũ nếu có
         workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
@@ -147,6 +162,8 @@ final class WorkspaceStore: ObservableObject {
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
         codexSessionIDs.remove(session.id)
+        agentSessionTitles.removeValue(forKey: session.id)
+        cancelCodexTitleResolution(for: session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
         if selectedSessionID == session.id {
@@ -216,6 +233,13 @@ final class WorkspaceStore: ObservableObject {
     /// other command (or `nil` for an idle prompt) clears it. Publishes only on
     /// an actual change.
     func setForeground(_ id: SessionRecord.ID, command: String?) {
+        // A new shell command starts a fresh title scope. This also restores the
+        // stable title on `precmd` idle after Ctrl-C, `/exit`, or normal exit.
+        agentSessionTitles.removeValue(forKey: id)
+        if command != "codex" {
+            cancelCodexTitleResolution(for: id)
+        }
+
         let isClaude = command == "claude"
         if isClaude, !claudeSessionIDs.contains(id) {
             claudeSessionIDs.insert(id)
@@ -229,6 +253,95 @@ final class WorkspaceStore: ObservableObject {
         } else if !isCodex, codexSessionIDs.contains(id) {
             codexSessionIDs.remove(id)
         }
+    }
+
+    func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
+        guard session(for: id) != nil else { return }
+
+        if codexSessionIDs.contains(id),
+           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
+            resolveCodexTitle(for: id, threadID: threadID)
+            return
+        }
+
+        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id),
+              let title = AgentSessionTitle.normalize(rawTitle),
+              agentSessionTitles[id] != title else {
+            return
+        }
+        if codexSessionIDs.contains(id) {
+            // A real OSC title is a manual `/rename`/`--name` value and wins
+            // over any in-flight automatic-title metadata lookup.
+            cancelCodexTitleResolution(for: id)
+        }
+        agentSessionTitles[id] = title
+    }
+
+    func displayTitle(for session: SessionRecord) -> String {
+        agentSessionTitles[session.id] ?? session.title
+    }
+
+    private func resolveCodexTitle(
+        for sessionID: SessionRecord.ID,
+        threadID: UUID
+    ) {
+        if codexThreadIDs[sessionID] != threadID {
+            cancelCodexTitleResolution(for: sessionID)
+            codexThreadIDs[sessionID] = threadID
+        } else if codexTitleResolutionTasks[sessionID] != nil {
+            return
+        }
+
+        let lookup = codexTitleLookup
+        codexTitleResolutionTasks[sessionID] = Task { [weak self] in
+            // A resumed thread resolves immediately. A new thread gets its
+            // automatic title shortly after the first prompt, so retry with a
+            // bounded backoff while Codex remains the foreground process.
+            let delays: [UInt64] = [
+                0,
+                500_000_000,
+                1_000_000_000,
+                2_000_000_000,
+                4_000_000_000,
+                8_000_000_000,
+                15_000_000_000,
+                30_000_000_000,
+                60_000_000_000,
+            ]
+
+            for delay in delays {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+                guard let self,
+                      codexSessionIDs.contains(sessionID),
+                      codexThreadIDs[sessionID] == threadID else {
+                    return
+                }
+                guard let rawTitle = await lookup(threadID),
+                      let title = AgentSessionTitle.normalize(rawTitle) else {
+                    continue
+                }
+                guard codexSessionIDs.contains(sessionID),
+                      codexThreadIDs[sessionID] == threadID else {
+                    return
+                }
+                agentSessionTitles[sessionID] = title
+                codexTitleResolutionTasks[sessionID] = nil
+                return
+            }
+
+            if self?.codexThreadIDs[sessionID] == threadID {
+                self?.codexTitleResolutionTasks[sessionID] = nil
+            }
+        }
+    }
+
+    private func cancelCodexTitleResolution(for sessionID: SessionRecord.ID) {
+        codexTitleResolutionTasks.removeValue(forKey: sessionID)?.cancel()
+        codexThreadIDs.removeValue(forKey: sessionID)
     }
 
     func reportClaudeAttention(

@@ -295,6 +295,7 @@ private struct SessionSidebarRow: View {
     @State private var rowHeight: CGFloat = 36
 
     private var isSelected: Bool { session.id == workspace.selectedSessionID }
+    private var displayTitle: String { workspace.displayTitle(for: session) }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -302,7 +303,7 @@ private struct SessionSidebarRow: View {
                               isClaude: workspace.claudeSessionIDs.contains(session.id),
                               isCodex: workspace.codexSessionIDs.contains(session.id))
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.title)
+                Text(displayTitle)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
                     .lineLimit(1)
@@ -326,7 +327,7 @@ private struct SessionSidebarRow: View {
                     .frame(width: 20, height: 20)
             }
             .buttonStyle(.borderless)
-            .help("Close \(session.title)")
+            .help("Close \(displayTitle)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -737,6 +738,9 @@ private struct TerminalPane: View {
                                  onForeground: {
                                      workspace.setForeground(session.id, command: $0)
                                  },
+                                 onTitleChange: {
+                                     workspace.setAgentTitle(session.id, title: $0)
+                                 },
                                  onClaudeAttention: {
                                      workspace.reportClaudeAttention(session.id, kind: $0)
                                  },
@@ -809,7 +813,7 @@ private struct TerminalPane: View {
                 dotSize: 8,
                 glowRadius: 4,
                 showsRunningGlow: isFocused)
-            Text(session.title)
+            Text(workspace.displayTitle(for: session))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)

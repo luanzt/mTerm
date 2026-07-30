@@ -314,6 +314,78 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.codexSessionIDs.contains(id))
     }
 
+    func testAgentTitleTemporarilyOverridesStableSessionTitle() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setAgentTitle(session.id, title: "Ignored before agent starts")
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+
+        store.setForeground(session.id, command: "claude")
+        store.setAgentTitle(session.id, title: "  Refactor   authentication  ")
+        XCTAssertEqual(store.displayTitle(for: session), "Refactor authentication")
+        XCTAssertEqual(store.session(for: session.id)?.title, session.title)
+
+        store.setForeground(session.id, command: nil)
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+
+        store.setAgentTitle(session.id, title: "Delayed title after exit")
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+    }
+
+    func testAgentTitleUpdatesForResumeAndClearsOnNextCommand() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "codex")
+        store.setAgentTitle(session.id, title: "Initial prompt")
+        store.setAgentTitle(session.id, title: "Resumed checkout refactor")
+        XCTAssertEqual(store.displayTitle(for: session), "Resumed checkout refactor")
+
+        store.setForeground(session.id, command: "git")
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+    }
+
+    func testCodexUUIDResolvesAutomaticTitleWithoutDisplayingIdentifier() async {
+        let threadID = UUID(uuidString: "019f9217-1cc5-72a2-8569-8f19f2d4f3b8")!
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { receivedID in
+                XCTAssertEqual(receivedID, threadID)
+                return "Notifications hiện tại đang được xử lý như nào"
+            })
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "codex")
+        store.setAgentTitle(session.id, title: threadID.uuidString.lowercased())
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+
+        for _ in 0..<20 where store.displayTitle(for: session) == session.title {
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            store.displayTitle(for: session),
+            "Notifications hiện tại đang được xử lý như nào")
+    }
+
+    func testManualCodexTitleOverridesMetadataLookup() async {
+        let threadID = UUID(uuidString: "019f9217-1cc5-72a2-8569-8f19f2d4f3b8")!
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return "Automatic title"
+            })
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "codex")
+        store.setAgentTitle(session.id, title: threadID.uuidString)
+        store.setAgentTitle(session.id, title: "Renamed checkout refactor")
+        try? await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertEqual(store.displayTitle(for: session), "Renamed checkout refactor")
+    }
+
     func testCloseClearsClaudeState() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         store.createSession()
@@ -328,10 +400,13 @@ final class WorkspaceStoreTests: XCTestCase {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]
         store.setForeground(session.id, command: "codex")
+        store.setAgentTitle(session.id, title: "Fix launch crash")
+        XCTAssertEqual(store.displayTitle(for: session), "Fix launch crash")
 
         store.close(session)
 
         XCTAssertFalse(store.codexSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
     }
 
     func testClaudeAttentionResolvesAndForwardsLiveSession() {

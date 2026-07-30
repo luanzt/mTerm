@@ -10,6 +10,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
+    /// Reports standard OSC 0/2 terminal-title updates. WorkspaceStore accepts
+    /// them only while Claude or Codex is the pane's foreground command.
+    var onTitleChange: (String) -> Void = { _ in }
     /// Reports a trusted Claude Code Notification-hook event received by this
     /// pane's PTY through mTerm's private OSC 777 payload.
     var onClaudeAttention: (ClaudeIntegration.AttentionKind) -> Void = { _ in }
@@ -41,6 +44,8 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
+        context.coordinator.onTerminalTitle = onTitleChange
+        terminal.processDelegate = context.coordinator
 
         // Listen for the shell-integration marker (OSC 633). SwiftTerm checks
         // registered handlers before its built-in OSC switch, so this needs no
@@ -125,6 +130,7 @@ struct TerminalHostView: NSViewRepresentable {
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         nsView.isHidden = !isVisible
+        context.coordinator.onTerminalTitle = onTitleChange
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
@@ -153,6 +159,8 @@ struct TerminalHostView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+        coordinator.cancelPendingTitleUpdate()
+        nsView.processDelegate = nil
         if let observer = coordinator.frameObserver {
             NotificationCenter.default.removeObserver(observer)
             coordinator.frameObserver = nil
@@ -164,19 +172,64 @@ struct TerminalHostView: NSViewRepresentable {
 
     // MARK: Coordinator
 
-    final class Coordinator {
+    final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
         var terminal: LocalProcessTerminalView?
         var didStartProcess = false
         var frameObserver: NSObjectProtocol?
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var lastFileDropID: UUID?
         var foregroundCommand: String?
+        var onTerminalTitle: (String) -> Void = { _ in }
+        private var pendingTitleUpdate: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
             guard !didStartProcess,
                   terminal.frame.width > 1, terminal.frame.height > 1 else { return }
             didStartProcess = true
             startShell?(terminal)
+        }
+
+        func sizeChanged(
+            source: LocalProcessTerminalView,
+            newCols: Int,
+            newRows: Int
+        ) {}
+
+        func setTerminalTitle(
+            source: LocalProcessTerminalView,
+            title: String
+        ) {
+            // Claude may animate a spinner in the terminal title while a turn is
+            // active. Debounce on the main queue so only a stable conversation
+            // title reaches SwiftUI.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                pendingTitleUpdate?.cancel()
+                let update = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    pendingTitleUpdate = nil
+                    onTerminalTitle(title)
+                }
+                pendingTitleUpdate = update
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + 0.35,
+                    execute: update)
+            }
+        }
+
+        func hostCurrentDirectoryUpdate(
+            source: TerminalView,
+            directory: String?
+        ) {}
+
+        func processTerminated(
+            source: TerminalView,
+            exitCode: Int32?
+        ) {}
+
+        func cancelPendingTitleUpdate() {
+            pendingTitleUpdate?.cancel()
+            pendingTitleUpdate = nil
         }
     }
 }

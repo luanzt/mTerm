@@ -46,6 +46,7 @@ final class CodexIntegrationTests: XCTestCase {
         XCTAssertTrue(contents.contains("tui.notifications=true"))
         XCTAssertTrue(contents.contains("tui.notification_method=\"osc9\""))
         XCTAssertTrue(contents.contains("tui.notification_condition=\"always\""))
+        XCTAssertTrue(contents.contains("tui.terminal_title=[\"thread-title\"]"))
         XCTAssertTrue(contents.contains("\"$@\""))
     }
 
@@ -85,6 +86,7 @@ final class CodexIntegrationTests: XCTestCase {
             "-c", "tui.notifications=true",
             "-c", "tui.notification_method=\"osc9\"",
             "-c", "tui.notification_condition=\"always\"",
+            "-c", "tui.terminal_title=[\"thread-title\"]",
             "resume", "--last",
             "-c", "tui.notifications=false",
         ])

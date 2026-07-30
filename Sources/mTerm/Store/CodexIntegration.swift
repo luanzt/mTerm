@@ -51,8 +51,11 @@ enum CodexIntegration {
     }
 
     /// `notification_condition=always` makes delivery deterministic even when a
-    /// terminal doesn't implement focus-reporting escape sequences. mTerm owns
-    /// the actual foreground/background policy and suppresses alerts while active.
+    /// terminal doesn't implement focus-reporting escape sequences. Restricting
+    /// `terminal_title` to `thread-title` lets mTerm receive a manual thread name
+    /// or the UUID needed to resolve Codex's automatic title metadata, without
+    /// Codex's default animated activity + project title. mTerm owns the actual
+    /// foreground/background policy and suppresses alerts while active.
     private static let codexShim = """
     #!/bin/zsh
     shim_dir="${0:A:h}"
@@ -66,6 +69,7 @@ enum CodexIntegration {
       -c 'tui.notifications=true' \\
       -c 'tui.notification_method="osc9"' \\
       -c 'tui.notification_condition="always"' \\
+      -c 'tui.terminal_title=["thread-title"]' \\
       "$@"
     """ + "\n"
 }

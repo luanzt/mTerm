@@ -135,7 +135,7 @@ notification authorization, delivery, and click-through.
 
 `CodexIntegration.writeFiles()` creates a `codex` PATH shim under
 `~/Library/Application Support/mTerm/codex-notifications`. The shim keeps the
-user's arguments and applies three invocation-only overrides:
+user's arguments and applies four invocation-only overrides:
 
 - `tui.notifications=true` enables Codex's built-in attention events, including
   completed turns, approval requests, and interactive prompts.
@@ -144,6 +144,9 @@ user's arguments and applies three invocation-only overrides:
 - `tui.notification_condition="always"` ensures mTerm receives events even
   without terminal focus reporting. `AgentNotificationCoordinator` still
   suppresses native notifications while `NSApp` is active.
+- `tui.terminal_title=["thread-title"]` makes Codex publish its manually assigned
+  thread name, or its thread UUID while unnamed, through standard OSC 0/2
+  terminal-title updates without the animated activity/project-name suffix.
 
 No `~/.codex/config.toml` setting is edited. A later user-supplied `-c` argument
 can override these defaults for an individual invocation. Because OSC 9 is a
@@ -155,6 +158,30 @@ The native alert uses a privacy-safe generic summary and still routes back to
 the exact pane when clicked. The same foreground-command state swaps both the
 sidebar and pane-header running dots for the white OpenAI app mark while Codex
 is active. Claude uses its terracotta app mark in those same two locations.
+
+#### Agent conversation titles
+
+Claude Code publishes its current conversation title through standard OSC 0/2;
+the Codex invocation override above requests its thread-title signal.
+`TerminalHostView` receives those updates through SwiftTerm's process delegate
+and briefly debounces them to avoid rendering Claude's animated title states.
+`WorkspaceStore` validates and accepts the result only while shell integration
+reports `claude` or `codex` as the pane's foreground command.
+
+Codex's `thread-title` falls back to a UUID until the user runs `/rename` or
+starts with `--name`; never display that identifier. `CodexThreadTitleResolver`
+uses the UUID to query only the matching row's `name`/`title` fields in Codex's
+local `state_*.sqlite` metadata, with bounded retries for a new chat's first
+prompt. It does not read rollout JSONL or prompt/assistant transcript content.
+An OSC name from `/rename`, `--name`, or a named `/resume` cancels and overrides
+the metadata lookup.
+
+Keep the agent title as a separate display-only overlay. Never mutate the
+session's stable `Terminal N` title, infer a title from rendered terminal text,
+or read an agent's transcript. Clear the overlay when the next
+foreground-command marker arrives, including the shell's idle `precmd` marker
+after the agent actually exits. A Ctrl-C that only cancels an in-agent turn does
+not return to the shell and therefore must not restore `Terminal N`.
 
 ### Theme
 
