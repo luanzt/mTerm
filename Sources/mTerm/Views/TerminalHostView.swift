@@ -6,6 +6,7 @@ struct TerminalHostView: NSViewRepresentable {
     let session: SessionRecord
     let isVisible: Bool
     let isFocused: Bool
+    let fileDropRequest: TerminalFileDropRequest?
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
@@ -99,6 +100,14 @@ struct TerminalHostView: NSViewRepresentable {
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
 
+        if isVisible,
+           let request = fileDropRequest,
+           context.coordinator.lastFileDropID != request.id {
+            context.coordinator.lastFileDropID = request.id
+            nsView.window?.makeFirstResponder(nsView)
+            nsView.send(txt: TerminalFileDrop.shellInput(for: request.urls))
+        }
+
         // Give keyboard focus to the selected pane's terminal so typing works
         // right after picking a session in the sidebar — without stealing focus
         // while the user is already typing in it (skip when it is already first
@@ -125,12 +134,37 @@ struct TerminalHostView: NSViewRepresentable {
         var didStartProcess = false
         var frameObserver: NSObjectProtocol?
         var startShell: ((LocalProcessTerminalView) -> Void)?
+        var lastFileDropID: UUID?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
             guard !didStartProcess,
                   terminal.frame.width > 1, terminal.frame.height > 1 else { return }
             didStartProcess = true
             startShell?(terminal)
+        }
+    }
+}
+
+struct TerminalFileDropRequest {
+    let id = UUID()
+    let urls: [URL]
+}
+
+enum TerminalFileDrop {
+    /// Produces shell arguments but deliberately no newline, so dropping a file
+    /// fills the current command line without executing it.
+    static func shellInput(for urls: [URL]) -> String {
+        guard !urls.isEmpty else { return "" }
+        return urls.map { shellEscape($0.path) }.joined(separator: " ") + " "
+    }
+
+    /// Mirrors iTerm2's default dropped-filename style: keep ordinary paths
+    /// visually clean and prefix only shell-significant characters with `\`.
+    static func shellEscape(_ value: String) -> String {
+        let escapable = "\\ ()\"&'!$<>;|*?[]#`\t{}^+=@~\r\n"
+        return escapable.reduce(value) { result, character in
+            let literal = String(character)
+            return result.replacingOccurrences(of: literal, with: "\\" + literal)
         }
     }
 }

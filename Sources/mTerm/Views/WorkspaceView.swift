@@ -686,6 +686,7 @@ private struct TerminalPane: View {
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
+    @State private var fileDropRequest: TerminalFileDropRequest?
 
     var body: some View {
         GeometryReader { proxy in
@@ -698,6 +699,7 @@ private struct TerminalPane: View {
                 TerminalHostView(session: session,
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
+                                 fileDropRequest: fileDropRequest,
                                  onForeground: { workspace.setForeground(session.id, command: $0) })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
@@ -713,28 +715,43 @@ private struct TerminalPane: View {
                     y: showsFocusMarker ? 3 : 1)
             .opacity(isFocused ? 1 : MTermTheme.inactivePaneOpacity)
             .overlay {
-                ZStack {
-                    Color.clear
-                    if let dropZone {
-                        TerminalDropPreview(zone: dropZone, size: proxy.size)
+                // Do not leave a SwiftUI drop destination above SwiftTerm during
+                // external Finder drags. `allowsHitTesting(false)` only governs
+                // normal pointer events; the registered drop destination can
+                // still prevent AppKit from routing `.fileURL` to the terminal
+                // NSView underneath. Mount this overlay only for our internal
+                // session drag, which is the sole reason it exists.
+                if workspace.draggedSessionID != nil {
+                    ZStack {
+                        Color.clear
+                        if let dropZone {
+                            TerminalDropPreview(zone: dropZone, size: proxy.size)
+                        }
                     }
+                    .contentShape(Rectangle())
+                    .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
+                        targetSessionID: session.id,
+                        size: proxy.size,
+                        dropZone: $dropZone,
+                        workspace: workspace))
                 }
-                .contentShape(Rectangle())
-                // Only intercept mouse events while a session is being dragged;
-                // otherwise let clicks fall through so the terminal can focus.
-                .allowsHitTesting(workspace.draggedSessionID != nil)
-                .onDrop(of: [.text], delegate: TerminalPaneDropDelegate(
-                    targetSessionID: session.id,
-                    size: proxy.size,
-                    dropZone: $dropZone,
-                    workspace: workspace))
-                .onChange(of: workspace.grid) { dropZone = nil }
-                .onChange(of: workspace.draggedSessionID) {
-                    if workspace.draggedSessionID == nil { dropZone = nil }
-                }
+            }
+            .onChange(of: workspace.grid) { dropZone = nil }
+            .onChange(of: workspace.draggedSessionID) {
+                if workspace.draggedSessionID == nil { dropZone = nil }
             }
             .onHover { hovering in
                 if hovering { workspace.hoveredSessionID = session.id }
+            }
+            // Register Finder URLs on the pane itself (outside the internal
+            // session-drag overlay), then relay the resulting input to this
+            // pane's persistent SwiftTerm view.
+            .dropDestination(for: URL.self) { urls, _ in
+                let fileURLs = urls.filter(\.isFileURL)
+                guard !fileURLs.isEmpty else { return false }
+                workspace.selectedSessionID = session.id
+                fileDropRequest = TerminalFileDropRequest(urls: fileURLs)
+                return true
             }
         }
     }
@@ -936,4 +953,3 @@ private struct TerminalPaneDropDelegate: DropDelegate {
         return .center
     }
 }
-
