@@ -46,6 +46,7 @@ private struct WorkspaceSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @State private var collapsedFolders: Set<WorkspaceFolder.ID> = []
     @State private var folderDropTarget: FolderDropTarget?
+    @State private var sessionDropTarget: SessionDropTarget?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,7 +57,7 @@ private struct WorkspaceSidebar: View {
                     }
                     sidebarSection("OPEN SESSIONS") {
                         ForEach(workspace.sessions.filter { $0.workspaceID == nil }) { session in
-                            SessionSidebarRow(session: session)
+                            SessionSidebarRow(session: session, dropTarget: $sessionDropTarget)
                         }
                     }
                     sidebarSection("WORKSPACES", accessory: {
@@ -82,7 +83,9 @@ private struct WorkspaceSidebar: View {
                                                dropTarget: $folderDropTarget)
                             if isExpanded {
                                 ForEach(children) { session in
-                                    SessionSidebarRow(session: session, isNested: true)
+                                    SessionSidebarRow(session: session,
+                                                      isNested: true,
+                                                      dropTarget: $sessionDropTarget)
                                 }
                             }
                         }
@@ -277,20 +280,26 @@ private struct FolderReorderDropDelegate: DropDelegate {
     }
 }
 
+/// Which session row the cursor is over during a session drag, and whether the
+/// dragged session would land after it (below) rather than before it (above).
+struct SessionDropTarget: Equatable {
+    let id: SessionRecord.ID
+    let after: Bool
+}
+
 private struct SessionSidebarRow: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     let session: SessionRecord
     var isNested = false
+    @Binding var dropTarget: SessionDropTarget?
+    @State private var rowHeight: CGFloat = 36
 
     private var isSelected: Bool { session.id == workspace.selectedSessionID }
 
     var body: some View {
         HStack(spacing: 9) {
-            Circle()
-                .fill(session.status == .running ? MTermTheme.accent : MTermTheme.dim2)
-                .frame(width: 7, height: 7)
-                .shadow(color: session.status == .running ? MTermTheme.accent.opacity(0.7) : .clear,
-                        radius: 3)
+            SessionStatusIcon(status: session.status,
+                              isClaude: workspace.claudeSessionIDs.contains(session.id))
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
@@ -329,7 +338,13 @@ private struct SessionSidebarRow: View {
                 .opacity(isSelected ? 1 : 0)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(GeometryReader { g in
+            Color.clear.onAppear { rowHeight = g.size.height }
+        })
+        .overlay(alignment: .top) { insertionLine(visible: isTarget(after: false)) }
+        .overlay(alignment: .bottom) { insertionLine(visible: isTarget(after: true)) }
         .padding(.leading, isNested ? 12 : 0)
+        .opacity(workspace.draggedSessionID == session.id ? 0.4 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
             workspace.openInActivePane(session.id)
@@ -338,9 +353,133 @@ private struct SessionSidebarRow: View {
             workspace.beginDragging(session.id)
             return NSItemProvider(object: session.id.uuidString as NSString)
         }
+        .onDrop(of: [.text], delegate: SessionReorderDropDelegate(
+            targetID: session.id,
+            rowHeight: rowHeight,
+            dropTarget: $dropTarget,
+            workspace: workspace))
         .contextMenu {
             Button("Close") { workspace.close(session) }
         }
+    }
+
+    private func isTarget(after: Bool) -> Bool {
+        dropTarget == SessionDropTarget(id: session.id, after: after)
+    }
+
+    private func insertionLine(visible: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(MTermTheme.accent)
+            .frame(height: 2)
+            .padding(.horizontal, 10)
+            .opacity(visible ? 1 : 0)
+    }
+}
+
+/// Reorders a session relative to another within the same sidebar section. Mirrors
+/// `FolderReorderDropDelegate`; the same-section guard lives in
+/// `WorkspaceStore.moveSession`, and `validateDrop` also checks it so no insertion
+/// line shows for a cross-section drag.
+private struct SessionReorderDropDelegate: DropDelegate {
+    let targetID: SessionRecord.ID
+    let rowHeight: CGFloat
+    @Binding var dropTarget: SessionDropTarget?
+    let workspace: WorkspaceStore
+
+    func validateDrop(info: DropInfo) -> Bool {
+        guard let dragged = workspace.draggedSessionID else { return false }
+        return dragged != targetID && sameSection(dragged)
+    }
+
+    func dropEntered(info: DropInfo) { update(info) }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        update(info)
+        return DropProposal(operation: dropTarget == nil ? .cancel : .move)
+    }
+
+    func dropExited(info: DropInfo) { dropTarget = nil }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { workspace.finishDragging(); dropTarget = nil }
+        guard let dragged = workspace.draggedSessionID, let target = dropTarget else {
+            return false
+        }
+        workspace.moveSession(dragged, relativeTo: target.id, insertAfter: target.after)
+        return true
+    }
+
+    private func sameSection(_ dragged: SessionRecord.ID) -> Bool {
+        workspace.session(for: dragged)?.workspaceID == workspace.session(for: targetID)?.workspaceID
+    }
+
+    private func update(_ info: DropInfo) {
+        guard let dragged = workspace.draggedSessionID,
+              dragged != targetID, sameSection(dragged) else {
+            dropTarget = nil
+            return
+        }
+        dropTarget = SessionDropTarget(id: targetID, after: info.location.y > rowHeight / 2)
+    }
+}
+
+/// The sidebar row's leading icon: a round terminal glyph, swapped to the Claude
+/// mark while Claude runs in that pane, dimmed when the session has exited.
+private struct SessionStatusIcon: View {
+    let status: SessionRecord.Status
+    let isClaude: Bool
+
+    private var tint: Color {
+        if status != .running { return MTermTheme.dim2 }
+        return MTermTheme.accent
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(tint.opacity(0.16))
+                .frame(width: 18, height: 18)
+            if isClaude {
+                ClaudeMark()
+                    .fill(tint)
+                    .frame(width: 11, height: 11)
+            } else {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(tint)
+            }
+        }
+        .shadow(color: status == .running ? tint.opacity(0.5) : .clear, radius: 3)
+    }
+}
+
+/// The Claude "sunburst" mark: tapered spokes radiating from the center, drawn as
+/// a vector so it needs no bundled asset and scales with its frame.
+struct ClaudeMark: Shape {
+    var spokes = 8
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let outer = min(rect.width, rect.height) / 2
+        let inner = outer * 0.30
+        let halfWidth = outer * 0.14   // half-angle taper at the hub
+
+        for i in 0..<spokes {
+            let angle = (Double(i) / Double(spokes)) * 2 * .pi
+            let perp = angle + .pi / 2
+            let tip = CGPoint(x: center.x + cos(angle) * outer,
+                              y: center.y + sin(angle) * outer)
+            let base1 = CGPoint(x: center.x + cos(angle) * inner + cos(perp) * halfWidth,
+                                y: center.y + sin(angle) * inner + sin(perp) * halfWidth)
+            let base2 = CGPoint(x: center.x + cos(angle) * inner - cos(perp) * halfWidth,
+                                y: center.y + sin(angle) * inner - sin(perp) * halfWidth)
+            path.move(to: base1)
+            path.addLine(to: tip)
+            path.addLine(to: base2)
+            path.closeSubpath()
+        }
+        return path
     }
 }
 
@@ -539,7 +678,8 @@ private struct TerminalPane: View {
                 header
                 TerminalHostView(session: session,
                                  isVisible: isVisible,
-                                 isFocused: session.id == workspace.selectedSessionID)
+                                 isFocused: session.id == workspace.selectedSessionID,
+                                 onForeground: { workspace.setForeground(session.id, command: $0) })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
             }

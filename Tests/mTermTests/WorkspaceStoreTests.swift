@@ -196,6 +196,96 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.grid.paneIDs, [a])
     }
 
+    // MARK: moveSession
+
+    func testMoveSessionReordersWithinOpenSessions() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.createSession()
+        let c = store.sessions[2].id
+
+        // Move a to after c: [a,b,c] -> [b,c,a]
+        store.moveSession(a, relativeTo: c, insertAfter: true)
+        XCTAssertEqual(store.sessions.map(\.id), [b, c, a])
+    }
+
+    func testMoveSessionInsertBefore() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.createSession()
+        let c = store.sessions[2].id
+
+        store.moveSession(c, relativeTo: a, insertAfter: false)   // [a,b,c] -> [c,a,b]
+        XCTAssertEqual(store.sessions.map(\.id), [c, a, b])
+    }
+
+    func testMoveSessionIgnoredAcrossSections() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let loose = store.sessions[0].id
+        let folder = WorkspaceFolder(path: "/tmp/repo")
+        store.createSession(in: folder)
+        let inFolder = store.sessions[1].id
+        let before = store.sessions.map(\.id)
+
+        // Different workspaceID -> no-op.
+        store.moveSession(loose, relativeTo: inFolder, insertAfter: true)
+        XCTAssertEqual(store.sessions.map(\.id), before)
+    }
+
+    // MARK: focusGridPane
+
+    func testFocusGridPaneSelectsNthVisiblePane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)   // grid [a][b]
+
+        store.focusGridPane(at: 0)
+        XCTAssertEqual(store.selectedSessionID, a)
+        store.focusGridPane(at: 1)
+        XCTAssertEqual(store.selectedSessionID, b)
+    }
+
+    func testFocusGridPaneOutOfRangeIsNoOp() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.focusGridPane(at: 5)                    // only one pane
+        XCTAssertEqual(store.selectedSessionID, a)
+    }
+
+    // MARK: setForeground (shell integration icon state)
+
+    func testSetForegroundTracksClaude() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+
+        store.setForeground(a, command: "claude")
+        XCTAssertTrue(store.claudeSessionIDs.contains(a))
+
+        store.setForeground(a, command: "git")        // other command clears it
+        XCTAssertFalse(store.claudeSessionIDs.contains(a))
+
+        store.setForeground(a, command: "claude")
+        store.setForeground(a, command: nil)           // idle clears it
+        XCTAssertFalse(store.claudeSessionIDs.contains(a))
+    }
+
+    func testCloseClearsClaudeState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        store.createSession()
+        let b = store.sessions[1].id
+        store.setForeground(b, command: "claude")
+        XCTAssertTrue(store.claudeSessionIDs.contains(b))
+        store.close(store.session(for: b)!)
+        XCTAssertFalse(store.claudeSessionIDs.contains(b))
+    }
+
     func testClosingWhileMaximizedEndsMaximizeState() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let a = store.sessions[0].id

@@ -15,6 +15,10 @@ final class WorkspaceStore: ObservableObject {
     /// Session shown in the pane the cursor most recently hovered. Used as the
     /// target pane when opening a session or creating a terminal from the sidebar.
     @Published var hoveredSessionID: SessionRecord.ID?
+    /// Sessions whose pane currently has `claude` as its foreground command,
+    /// reported via shell integration (see `setForeground`). Drives the sidebar
+    /// icon swap.
+    @Published private(set) var claudeSessionIDs: Set<SessionRecord.ID> = []
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
@@ -132,6 +136,7 @@ final class WorkspaceStore: ObservableObject {
     func close(_ session: SessionRecord) {
         guard let index = sessions.firstIndex(of: session) else { return }
         savedGrid = nil
+        claudeSessionIDs.remove(session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
         if selectedSessionID == session.id {
@@ -159,16 +164,46 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func move(_ sessionID: SessionRecord.ID, before destinationID: SessionRecord.ID) {
-        guard sessionID != destinationID,
-              let source = sessions.firstIndex(where: { $0.id == sessionID }),
-              let destination = sessions.firstIndex(where: { $0.id == destinationID }) else {
+    /// Reorder a session relative to another **within the same section** (both
+    /// loose "open sessions", or both children of the same workspace folder).
+    /// `insertAfter` drops the dragged session below the target rather than above.
+    /// Cross-section drags are ignored so a reorder never yanks a session out of
+    /// its folder.
+    func moveSession(_ id: SessionRecord.ID,
+                     relativeTo targetID: SessionRecord.ID,
+                     insertAfter: Bool) {
+        guard id != targetID,
+              let source = sessions.firstIndex(where: { $0.id == id }),
+              let target = sessions.firstIndex(where: { $0.id == targetID }),
+              sessions[source].workspaceID == sessions[target].workspaceID else {
             return
         }
+        var destination = insertAfter ? target + 1 : target
         let item = sessions.remove(at: source)
-        let adjustedDestination = source < destination ? destination - 1 : destination
-        sessions.insert(item, at: adjustedDestination)
-        persist()
+        if source < destination { destination -= 1 }
+        destination = min(max(destination, 0), sessions.count)
+        sessions.insert(item, at: destination)
+    }
+
+    /// Quick-switch: focus the Nth pane currently in the grid (0-based, in visual
+    /// order left-to-right then top-to-bottom). No-op when out of range. Setting
+    /// the selection is enough — `TerminalHostView` moves the keyboard focus.
+    func focusGridPane(at index: Int) {
+        let ids = grid.paneIDs
+        guard ids.indices.contains(index) else { return }
+        selectedSessionID = ids[index]
+    }
+
+    /// Reported by shell integration when a pane's foreground command changes.
+    /// `"claude"` marks the row; any other command (or `nil` for an idle prompt)
+    /// clears it. Publishes only on an actual change.
+    func setForeground(_ id: SessionRecord.ID, command: String?) {
+        let isClaude = command == "claude"
+        if isClaude, !claudeSessionIDs.contains(id) {
+            claudeSessionIDs.insert(id)
+        } else if !isClaude, claudeSessionIDs.contains(id) {
+            claudeSessionIDs.remove(id)
+        }
     }
 
     func toggleSidebar() {

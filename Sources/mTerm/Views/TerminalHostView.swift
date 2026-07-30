@@ -6,6 +6,9 @@ struct TerminalHostView: NSViewRepresentable {
     let session: SessionRecord
     let isVisible: Bool
     let isFocused: Bool
+    /// Reports the pane's foreground command (via shell integration): the command
+    /// basename while one runs, or nil when the prompt goes idle.
+    var onForeground: (String?) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -27,6 +30,18 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.installColors(MTermTheme.ansiPalette.map { SwiftTerm.Color(hex: $0) })
         context.coordinator.terminal = terminal
 
+        // Listen for the shell-integration marker (OSC 633). SwiftTerm checks
+        // registered handlers before its built-in OSC switch, so this needs no
+        // fork change. The handler runs off SwiftTerm's feed, so hop to main.
+        let report = onForeground
+        terminal.getTerminal().registerOscHandler(code: ShellIntegration.oscCode) { payload in
+            switch ShellIntegration.parse(payload) {
+            case .run(let command): DispatchQueue.main.async { report(command) }
+            case .idle:             DispatchQueue.main.async { report(nil) }
+            case nil:               break
+            }
+        }
+
         // Start the shell the first time the view has a real (non-zero) size, so
         // the PTY's initial winsize matches the pane and no startup resize occurs
         // (a startup resize makes prompts like powerlevel10k reprint a duplicate
@@ -38,8 +53,17 @@ struct TerminalHostView: NSViewRepresentable {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let arguments = session.command.isEmpty ? ["-l"] : ["-lc", session.command]
         let directory = session.workingDirectory
+        // Inject the zsh shell-integration ZDOTDIR (no-op for non-zsh shells) so
+        // the pane reports its foreground command. Start from the app's own
+        // environment, ensuring TERM is set for the pty.
+        var base = ProcessInfo.processInfo.environment
+        base["TERM"] = "xterm-256color"
+        let environment = ShellIntegration.childEnvironment(shell: shell, base: base)
         context.coordinator.startShell = { term in
-            term.startProcess(executable: shell, args: arguments, currentDirectory: directory)
+            term.startProcess(executable: shell,
+                              args: arguments,
+                              environment: environment,
+                              currentDirectory: directory)
         }
 
         terminal.postsFrameChangedNotifications = true

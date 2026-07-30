@@ -47,6 +47,10 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         workspace.toggleSidebar()
     }
 
+    @objc private func focusPane(_ sender: NSMenuItem) {
+        workspace.focusGridPane(at: sender.tag)
+    }
+
     /// Pin the sidebar toggle to the trailing edge of the window titlebar (next
     /// to the "MTerm" title, flush against the window's right edge).
     private func installTitlebarToggle(in window: NSWindow) {
@@ -63,6 +67,17 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
 
     private func installMainMenu() {
         let mainMenu = NSMenu()
+
+        // Edit — Copy / Paste / Select All route through the responder chain
+        // (nil target) to the focused terminal view, which implements them.
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(menuItem("Copy", #selector(NSText.copy(_:)), "c"))
+        editMenu.addItem(menuItem("Paste", #selector(NSText.paste(_:)), "v"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(menuItem("Select All", #selector(NSText.selectAll(_:)), "a"))
+        addSubmenu(editMenu, to: mainMenu)
+
+        // View — Toggle Sidebar (⌘B).
         let viewMenu = NSMenu(title: "View")
         let toggleSidebarItem = NSMenuItem(
             title: "Toggle Sidebar",
@@ -71,10 +86,35 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         toggleSidebarItem.keyEquivalentModifierMask = .command
         toggleSidebarItem.target = self
         viewMenu.addItem(toggleSidebarItem)
+        addSubmenu(viewMenu, to: mainMenu)
 
-        let viewMenuItem = NSMenuItem(title: "View", action: nil, keyEquivalent: "")
-        viewMenuItem.submenu = viewMenu
-        mainMenu.addItem(viewMenuItem)
+        // Panes — quick-switch ⌘1…⌘6 to the Nth pane in the grid (max 6 panes).
+        let panesMenu = NSMenu(title: "Panes")
+        for n in 1...6 {
+            let item = NSMenuItem(title: "Pane \(n)",
+                                  action: #selector(focusPane(_:)),
+                                  keyEquivalent: "\(n)")
+            item.keyEquivalentModifierMask = .command
+            item.tag = n - 1
+            item.target = self
+            panesMenu.addItem(item)
+        }
+        addSubmenu(panesMenu, to: mainMenu)
+
         NSApp.mainMenu = mainMenu
+    }
+
+    /// A menu item with a ⌘-key equivalent and a `nil` target so the action
+    /// dispatches down the responder chain.
+    private func menuItem(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = .command
+        return item
+    }
+
+    private func addSubmenu(_ menu: NSMenu, to mainMenu: NSMenu) {
+        let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
+        item.submenu = menu
+        mainMenu.addItem(item)
     }
 }
