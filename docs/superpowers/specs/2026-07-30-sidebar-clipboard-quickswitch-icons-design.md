@@ -8,7 +8,8 @@ Four independent enhancements to mTerm:
 2. Quick-switch to a grid pane with ⌘1–⌘6.
 3. Drag-to-reorder sessions within the sidebar (OPEN SESSIONS and each workspace folder).
 4. Replace the sidebar's green status dot with a round terminal icon, swapping to a
-   Claude mark while Claude runs in that pane's foreground.
+   Claude mark while Claude runs in that pane — detected via zsh shell integration
+   (event-driven, no polling).
 
 Each feature is self-contained; they can be built and reviewed in any order.
 
@@ -143,80 +144,127 @@ insertion line and does nothing. Dragging onto a pane still opens/splits as befo
 
 ---
 
-## 4. Live pane icon (terminal / Claude)
+## 4. Live pane icon (terminal / Claude) — shell integration
 
-**Files:** new `Sources/mTerm/Store/ForegroundProcess.swift`,
+Detection is **event-driven via shell integration** (the approach Warp / VS Code /
+iTerm2 use), not polling. The shell emits a marker escape sequence on every command
+start/finish; mTerm listens for it through SwiftTerm's custom-OSC hook. No timer, no
+per-frame process probing.
+
+**Files:** new `Sources/mTerm/Store/ShellIntegration.swift`,
 `Sources/mTerm/Views/WorkspaceView.swift`,
 `Sources/mTerm/Views/TerminalHostView.swift`,
 `Sources/mTerm/Store/WorkspaceStore.swift`. New view struct(s) may live in
-`WorkspaceView.swift` or a small `Views/SessionStatusIcon.swift`.
+`WorkspaceView.swift` or a small `Views/SessionStatusIcon.swift`. Integration
+dotfiles are written at runtime under Application Support (not checked in).
 
-### 4a. Foreground-process probe
+**Scope:** zsh only (the machine's default shell). Non-zsh shells get no injection,
+so their rows always show the terminal icon — this is the accepted "no fallback"
+behavior; **there is no polling path.**
 
-`ForegroundProcess.swift` (uses `Darwin`):
+### 4a. Marker protocol (custom OSC 633)
+
+SwiftTerm exposes `Terminal.registerOscHandler(code:handler:)` and consults
+registered handlers **before** its built-in OSC switch
+(`EscapeSequenceParser.dispatchOsc`), so registering code `633` needs **no fork
+change** and cannot be shadowed by a built-in. (`633` is unused by SwiftTerm's
+built-ins; `1337`/`52`/`7`/`8` are taken.)
+
+The injected zsh hooks emit:
+
+- **preexec** (just before a command runs): `ESC ] 633 ; run ; <cmd> BEL`
+  where `<cmd>` is the basename of the command's first word (zsh `${${1%% *}:t}`).
+- **precmd** (back at the prompt): `ESC ] 633 ; idle BEL`
+
+So a long-running `claude` emits `run;claude` at start and `idle` only when it
+exits. Payload carries a single basename token (no spaces/paths), so no escaping is
+needed; the handler defensively ignores any payload with control characters.
+
+`ShellIntegration.parse(_ payload: ArraySlice<UInt8>) -> Event?` (pure, unit-tested)
+maps the bytes after `633;` to `.run(command: String)` or `.idle`.
+
+### 4b. Injecting the hooks — ZDOTDIR (VS Code / iTerm2 pattern)
+
+`ShellIntegration.swift`:
 
 ```swift
-enum ForegroundProcess {
-    /// The command running in the foreground of a pty (the master fd), or nil.
-    /// Unwraps common interpreters (node/python/…) to the script they run.
-    static func command(forPTY fd: Int32) -> String?
+enum ShellIntegration {
+    enum Event: Equatable { case run(command: String); case idle }
+    static func parse(_ payload: ArraySlice<UInt8>) -> Event?
+    /// Returns the child environment (as ["K=V"]) with ZDOTDIR redirected to
+    /// mTerm's generated integration dir, or `base` unchanged when `shell` is not
+    /// zsh. Writes/refreshes the integration dotfiles idempotently.
+    static func childEnvironment(shell: String, base: [String: String]) -> [String]
 }
 ```
 
-Implementation:
-1. `pgid = tcgetpgrp(fd)`; guard `pgid > 0` (–1 once the child exits).
-2. Read the process's argument vector with
-   `sysctl([CTL_KERN, KERN_PROCARGS2, pgid], ...)`: buffer layout is
-   `int argc` · `exec_path\0` · alignment padding · `argv[0]\0 … argv[argc-1]\0`.
-3. Parse `argc`, skip `exec_path`, read `argc` argv strings.
-4. `cmd = basename(argv[0])`. If `cmd` is an interpreter/launcher
-   (`node`, `node*`, `deno`, `bun`, `python`, `python3`, `ruby`, `env`,
-   `sh`, `bash`, `zsh`) and `argv[1]` exists, use `basename(argv[1])` instead.
-5. Return `cmd`.
+`childEnvironment`:
+1. If `basename(shell) != "zsh"`, return `base` untouched (no injection).
+2. Ensure the integration dir exists at
+   `~/Library/Application Support/mTerm/shell-integration/`, and (re)write four
+   zsh startup files: `.zshenv`, `.zprofile`, `.zshrc`, `.zlogin`. This is
+   required because setting `ZDOTDIR` redirects **all** zsh startup files, so each
+   must re-source the user's original.
+3. Return `base` plus:
+   - `MTERM_USER_ZDOTDIR` = the user's original `ZDOTDIR` (or `$HOME`)
+   - `ZDOTDIR` = the integration dir
+   - `MTERM_SHELL_INTEGRATION=1`
 
-The interpreter set is a heuristic; matching stays substring-tolerant (e.g. a
-`node20` binary). This function is pure given a buffer, so the parser is unit
-tested against a hand-built `KERN_PROCARGS2` buffer.
+The generated files, following VS Code's `shellIntegration-rc.zsh` model:
 
-### 4b. Store: fd registry + poller
+- `.zshenv` (sourced first for every zsh): restore `ZDOTDIR` back to the user's
+  original before sourcing, then `source $MTERM_USER_ZDOTDIR/.zshenv` if present. It
+  must re-point `ZDOTDIR` to the user's value so subsequent user files and tools see
+  the real one.
+- `.zprofile` / `.zlogin`: source the user's corresponding file if present.
+- `.zshrc`: source the user's `.zshrc` **first**, then append the preexec/precmd
+  hooks via `add-zsh-hook` (guarded by `MTERM_SHELL_INTEGRATION` so it installs
+  once). Because the hooks are defined but print **nothing at load time**,
+  powerlevel10k's instant prompt is unaffected (instant prompt only forbids output
+  before the first prompt; our hooks fire after it).
+
+This is the crux of the risk; it is contained to correct sourcing order + ZDOTDIR
+restoration. The generated `.zshrc` never writes to stdout during startup.
+
+### 4c. Store: foreground command per session
 
 ```swift
-private var ptyFDs: [SessionRecord.ID: Int32] = [:]
 @Published private(set) var claudeSessionIDs: Set<SessionRecord.ID> = []
-private var processTimer: Timer?
 
-func registerPTY(_ id: SessionRecord.ID, fd: Int32) {
-    ptyFDs[id] = fd
-    startProcessTimerIfNeeded()
-    refreshForegroundProcesses()
-}
-func unregisterPTY(_ id: SessionRecord.ID) {
-    ptyFDs.removeValue(forKey: id)
-    claudeSessionIDs.remove(id)
-    if ptyFDs.isEmpty { processTimer?.invalidate(); processTimer = nil }
-}
-private func refreshForegroundProcesses() {
-    var next: Set<SessionRecord.ID> = []
-    for (id, fd) in ptyFDs where ForegroundProcess.command(forPTY: fd) == "claude" {
-        next.insert(id)
-    }
-    if next != claudeSessionIDs { claudeSessionIDs = next }  // publish only on change
+/// Called by the OSC handler. `command == "claude"` marks the row; a nil/other
+/// command (idle or anything else) clears it. Publishes only on change.
+func setForeground(_ id: SessionRecord.ID, command: String?) {
+    let isClaude = command == "claude"
+    if isClaude, !claudeSessionIDs.contains(id) { claudeSessionIDs.insert(id) }
+    else if !isClaude, claudeSessionIDs.contains(id) { claudeSessionIDs.remove(id) }
 }
 ```
 
-`processTimer` fires ~every 1.5s on the main run loop calling
-`refreshForegroundProcesses()`. `close()` calls `unregisterPTY(session.id)`.
-Hidden (parked-offscreen) sessions keep their fd registered so their icon still
-tracks Claude — that is intended.
+`close()` also removes the id from `claudeSessionIDs`.
 
-### 4c. Terminal bridge reports the fd
+### 4d. Terminal bridge registers the OSC handler and injects env
 
-`TerminalHostView` gains `let onPTYReady: (Int32) -> Void`. In the coordinator,
-right after `startShell?(term)` runs (inside `startShellIfReady`, once), call
-`onPTYReady(term.process.childfd)`. `TerminalPane` supplies the closure:
-`{ fd in workspace.registerPTY(session.id, fd: fd) }`.
+`TerminalHostView` gains `let onForeground: (String?) -> Void`. In `makeNSView`:
 
-### 4d. The icon
+- After creating the terminal, register the handler:
+  ```swift
+  terminal.getTerminal().registerOscHandler(code: 633) { [onForeground] payload in
+      switch ShellIntegration.parse(payload) {
+      case .run(let cmd): DispatchQueue.main.async { onForeground(cmd) }
+      case .idle:         DispatchQueue.main.async { onForeground(nil) }
+      case nil:           break
+      }
+  }
+  ```
+- Build the child environment with the injected `ZDOTDIR` and pass it to
+  `startProcess(executable:args:environment:)`: start from
+  `ProcessInfo.processInfo.environment`, ensure `TERM=xterm-256color`, then
+  `ShellIntegration.childEnvironment(shell: shell, base:)`. (Today `startProcess`
+  is called with no `environment`; this adds the explicit env.)
+
+`TerminalPane` supplies `onForeground: { workspace.setForeground(session.id, command: $0) }`.
+
+### 4e. The icon
 
 Replace the `Circle().fill(...)` in `SessionSidebarRow` with a `SessionStatusIcon`:
 
@@ -233,8 +281,10 @@ Replace the `Circle().fill(...)` in `SessionSidebarRow` with a `SessionStatusIco
 The pane header dot (`TerminalPane.header`) is **out of scope** and unchanged.
 
 **Acceptance:** Each sidebar row shows a round terminal icon. Running `claude` in a
-pane flips that row's icon to the Claude mark within ~1.5s; exiting Claude reverts
-it; a crashed/exited session shows the dimmed terminal glyph.
+zsh pane flips that row's icon to the Claude mark as soon as the command starts;
+exiting Claude reverts it immediately; a crashed/exited session shows the dimmed
+terminal glyph. The user's zsh config (aliases, powerlevel10k incl. instant prompt)
+behaves exactly as before injection.
 
 ---
 
@@ -243,16 +293,23 @@ it; a crashed/exited session shows the dimmed terminal glyph.
 - `WorkspaceStoreTests`: `moveSession` reorders within a section, is a no-op across
   differing `workspaceID`s, and clamps at ends; `focusGridPane(at:)` selects the
   right pane and no-ops out of range.
-- `ForegroundProcessTests`: the argv parser returns the right command from a
-  synthesized `KERN_PROCARGS2` buffer, and unwraps an interpreter (`node script` →
-  `script`, `node claude` / bare `claude` → `claude`).
+- `ShellIntegrationTests`: `parse` maps `run;claude` → `.run("claude")`,
+  `idle` → `.idle`, rejects payloads with control chars / wrong prefix;
+  `childEnvironment` injects `ZDOTDIR`/`MTERM_USER_ZDOTDIR` only for zsh (returns
+  `base` unchanged for bash/fish) and writes the four dotfiles that re-source the
+  user's originals.
+- `WorkspaceStoreTests`: `setForeground(_,command:)` adds on `"claude"`, removes on
+  `nil`/other, and `close()` clears the id.
 - Manual: Edit-menu clipboard actions; ⌘1–⌘6 focus; sidebar drag reordering; the
-  live icon swap on `claude` start/exit.
+  live icon swap on real `claude` start/exit; and — critically — that a fresh zsh
+  session with the user's powerlevel10k config starts with no prompt-reprint or
+  instant-prompt warning.
 
 ## Out of scope
 
 - Cross-section drag (moving a session into/out of a folder by dragging).
 - Changing the pane-header status dot.
 - Persisting session order (sessions are intentionally not persisted).
-- Detecting tools other than Claude (the probe is general but only `claude` is
-  wired to an icon).
+- Shell integration for non-zsh shells (bash/fish get no Claude icon — accepted).
+- Detecting tools other than Claude (the marker carries any command, but only
+  `claude` is wired to an icon).
