@@ -48,6 +48,49 @@ enum ShellIntegration {
     /// The name mTerm's generated `.zshrc` guards on so the hooks install once.
     static let marker = "MTERM_SHELL_INTEGRATION"
 
+    /// Build the base environment for a fresh mTerm pane. Besides identifying
+    /// the terminal accurately, advertise capabilities that cannot be inferred
+    /// from the generic `xterm-256color` terminfo entry. In particular, popular
+    /// CLI renderers use `FORCE_HYPERLINK` to decide whether to emit OSC 8 links
+    /// with a short visible label or fall back to printing the full URL.
+    ///
+    /// Preserve an explicit `FORCE_HYPERLINK=0` so users can opt out.
+    static func terminalBaseEnvironment(
+        inherited: [String: String],
+        appVersion: String?
+    ) -> [String: String] {
+        var environment = inherited
+        let version = appVersion.flatMap { $0.isEmpty ? nil : $0 } ?? "0.0.0"
+
+        environment["TERM"] = "xterm-256color"
+        environment["COLORTERM"] = "truecolor"
+        environment["TERM_PROGRAM"] = "mTerm"
+        environment["TERM_PROGRAM_VERSION"] = version
+        environment["LC_TERMINAL"] = "mTerm"
+        environment["LC_TERMINAL_VERSION"] = version
+        if environment["FORCE_HYPERLINK"] == nil {
+            environment["FORCE_HYPERLINK"] = "1"
+        }
+
+        // A pane is a fresh terminal, not a child of whatever launched mTerm.
+        // Remove terminal/session identities that would otherwise make tools
+        // believe they are still running in iTerm, Kitty, VTE, or Windows
+        // Terminal, and remove Claude markers that trigger nested-session mode.
+        for key in [
+            "ITERM_SESSION_ID",
+            "KITTY_WINDOW_ID",
+            "VTE_VERSION",
+            "WT_SESSION",
+        ] {
+            environment.removeValue(forKey: key)
+        }
+        for key in environment.keys
+            where key == "CLAUDECODE" || key.hasPrefix("CLAUDE_CODE_") {
+            environment.removeValue(forKey: key)
+        }
+        return environment
+    }
+
     /// Directory holding the generated zsh startup files.
     static var integrationDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory,

@@ -27,6 +27,9 @@ pane-layout, updater, or release behavior.
 - Keep terminal pane frames non-animated; intermediate PTY resizes create a
   SIGWINCH/prompt-redraw storm.
 - Keep `NSHostingView.sizingOptions = []` and the deck's top-leading alignment.
+- Keep mTerm's child-process terminal identity and capability advertisement in
+  `ShellIntegration.terminalBaseEnvironment`. OSC 8-capable CLI renderers rely
+  on `FORCE_HYPERLINK=1`; preserve the user's explicit `0` opt-out.
 - Use `MTermTheme` rather than reintroducing system colors.
 
 ## Pane shortcuts
@@ -39,8 +42,10 @@ visible grid pane.
 
 ## Dependencies
 
-- Keep the pinned `luanzt/SwiftTerm` fork. Its disabled buffer reflow prevents
-  duplicated shell prompts during resize; do not silently switch to upstream.
+- Keep the pinned `luanzt/SwiftTerm` fork. It disables buffer reflow to prevent
+  duplicated shell prompts during resize and exposes separate resting/highlight
+  link colors plus an activation-aware pointing-hand cursor; do not silently
+  switch to upstream.
 - Sparkle is the in-app updater. Keep the standard updater controller retained
   by `MTermAppDelegate` and keep Check for Updates wired to it.
 - Packaging must embed `Sparkle.framework`, add its executable rpath, include

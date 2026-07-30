@@ -29,6 +29,11 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
         terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
         terminal.installColors(MTermTheme.ansiPalette.map { SwiftTerm.Color(hex: $0) })
+        // Give OSC 8 labels the same lavender used by Claude's other links.
+        // Command-hover reveals the link with a stronger blue + underline.
+        terminal.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
+        terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
+        terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
 
         // Listen for the shell-integration marker (OSC 633). SwiftTerm checks
@@ -54,18 +59,17 @@ struct TerminalHostView: NSViewRepresentable {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let arguments = session.command.isEmpty ? ["-l"] : ["-lc", session.command]
         let directory = session.workingDirectory
+        // Start from the app's environment, replace any inherited terminal
+        // identity with mTerm's, and advertise true-color + OSC 8 hyperlink
+        // support. This lets capable CLIs render compact clickable labels instead
+        // of fallback text such as "#2761 (https://…)".
+        let appVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let base = ShellIntegration.terminalBaseEnvironment(
+            inherited: ProcessInfo.processInfo.environment,
+            appVersion: appVersion)
         // Inject the zsh shell-integration ZDOTDIR (no-op for non-zsh shells) so
-        // the pane reports its foreground command. Start from the app's own
-        // environment, ensuring TERM is set for the pty.
-        var base = ProcessInfo.processInfo.environment
-        base["TERM"] = "xterm-256color"
-        // A pane is a fresh terminal, not a child of whatever launched mTerm. If
-        // mTerm was itself started from inside a Claude Code session, its process
-        // carries that session's markers (CLAUDECODE / CLAUDE_CODE_*); drop them so
-        // running `claude` in a pane isn't mistaken for a nested child session.
-        for key in base.keys where key == "CLAUDECODE" || key.hasPrefix("CLAUDE_CODE_") {
-            base.removeValue(forKey: key)
-        }
+        // the pane reports its foreground command.
         let environment = ShellIntegration.childEnvironment(shell: shell, base: base)
         context.coordinator.startShell = { term in
             term.startProcess(executable: shell,

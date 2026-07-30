@@ -88,6 +88,13 @@ view has a real non-zero frame, so the PTY's initial winsize matches the pane an
 prompts don't reprint on startup. `TerminalDeck.paneFrames` has a stderr tripwire
 that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a frame.
 
+`ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
+with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
+`FORCE_HYPERLINK=1` because SwiftTerm supports OSC 8 but generic
+`xterm-256color` detection cannot know that. This lets Claude/Ink-style CLIs emit
+compact labels such as `#2761` with the URL embedded instead of printing a
+fallback `#2761 (https://…)`. Preserve an explicit `FORCE_HYPERLINK=0` opt-out.
+
 ### Theme
 
 `Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a
@@ -98,12 +105,19 @@ that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a f
 
 ### SwiftTerm (fork)
 
-`Package.swift` pins **`luanzt/SwiftTerm`** (a fork), not upstream. The only change
-is `Buffer.isReflowEnabled → false`: upstream rewraps lines on resize, which makes
-zsh/powerlevel10k leave duplicated prompt lines on every resize. To bump SwiftTerm,
-rebase the fork's `edev-no-reflow` branch onto the new upstream revision, re-apply
-that one-line patch, and update the `revision:` in `Package.swift` — do not point
-back at upstream.
+`Package.swift` pins **`luanzt/SwiftTerm`** (a fork), not upstream. The fork carries
+two mTerm-specific changes:
+
+- `Buffer.isReflowEnabled → false`, because upstream rewraps lines on resize and
+  makes zsh/powerlevel10k leave duplicated prompt lines.
+- Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`, so
+  explicit OSC 8 links can match normal text at rest and change color only while
+  highlighted; macOS also uses a pointing-hand cursor only while the configured
+  link mode allows activation.
+
+To bump SwiftTerm, rebase the fork's `edev-no-reflow` branch onto the new upstream
+revision, re-apply both changes, and update the `revision:` in `Package.swift` —
+do not point back at upstream.
 
 ### Sparkle
 

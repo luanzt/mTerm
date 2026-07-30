@@ -8,12 +8,11 @@ let package = Package(
         .executable(name: "mTerm", targets: ["mTerm"]),
     ],
     dependencies: [
-        // Fork of SwiftTerm with reflow-on-resize disabled (isReflowEnabled=false).
-        // Upstream rewraps lines on resize, which makes zsh/powerlevel10k leave
-        // duplicated prompt lines on every resize; the fork pins the exact upstream
-        // revision we used plus that one-line change. See luanzt/SwiftTerm@edev-no-reflow.
+        // Fork of SwiftTerm with reflow-on-resize disabled and configurable
+        // foreground/highlight colors for OSC 8 links. See the dependency notes
+        // in CLAUDE.md before updating it.
         .package(url: "https://github.com/luanzt/SwiftTerm.git",
-                 revision: "7d05ba66b6770a88fd48c3fa1cdfa5d3a1657848"),
+                 revision: "2b2f6745a7034a1818b52a59a38d7fb93f1e33db"),
         .package(url: "https://github.com/sparkle-project/Sparkle",
                  exact: "2.9.4"),
     ],

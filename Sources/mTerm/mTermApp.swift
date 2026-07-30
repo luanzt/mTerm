@@ -85,6 +85,9 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
             title: "Check for Updates…",
             action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
             keyEquivalent: "")
+        checkForUpdatesItem.image = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: "Check for Updates")
         checkForUpdatesItem.target = updaterController
         applicationMenu.addItem(checkForUpdatesItem)
         applicationMenu.addItem(.separator())

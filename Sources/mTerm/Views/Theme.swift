@@ -47,6 +47,10 @@ enum MTermTheme {
     static let terminalForeground: UInt32 = 0xBBBEC2  // primary text (E7EAF0 dimmed ~19%)
     static let terminalBackground: UInt32 = 0x0A0C0F  // matches the pane deck
     static let terminalCaret: UInt32 = 0xBBBEC2
+    // Match the lavender links emitted by Claude; Command-hover then reveals a
+    // stronger blue without making resting OSC 8 labels look like plain text.
+    static let terminalLinkForeground: UInt32 = 0xBFC7F6
+    static let terminalLinkHighlight: UInt32 = 0x69A3EC
 
     // Vibrant palette (~15% desaturated from the pure Tailwind hues so colors
     // read calmer without going gray). 8 normal + 8 bright.

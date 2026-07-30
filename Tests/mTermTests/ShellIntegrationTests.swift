@@ -26,6 +26,45 @@ final class ShellIntegrationTests: XCTestCase {
         XCTAssertNil(ShellIntegration.parse(ArraySlice([0x72, 0x75, 0x6E, 0x3B, 0x07]))) // "run;\a"
     }
 
+    func testTerminalBaseEnvironmentAdvertisesCapabilitiesAndOwnIdentity() {
+        let environment = ShellIntegration.terminalBaseEnvironment(
+            inherited: [
+                "PATH": "/usr/bin",
+                "TERM_PROGRAM": "iTerm.app",
+                "ITERM_SESSION_ID": "old-session",
+                "KITTY_WINDOW_ID": "42",
+                "VTE_VERSION": "6000",
+                "WT_SESSION": "old-windows-session",
+                "CLAUDECODE": "1",
+                "CLAUDE_CODE_SESSION_ID": "old-claude-session",
+            ],
+            appVersion: "1.2.3")
+
+        XCTAssertEqual(environment["TERM"], "xterm-256color")
+        XCTAssertEqual(environment["COLORTERM"], "truecolor")
+        XCTAssertEqual(environment["TERM_PROGRAM"], "mTerm")
+        XCTAssertEqual(environment["TERM_PROGRAM_VERSION"], "1.2.3")
+        XCTAssertEqual(environment["LC_TERMINAL"], "mTerm")
+        XCTAssertEqual(environment["LC_TERMINAL_VERSION"], "1.2.3")
+        XCTAssertEqual(environment["FORCE_HYPERLINK"], "1")
+        XCTAssertEqual(environment["PATH"], "/usr/bin")
+        XCTAssertNil(environment["ITERM_SESSION_ID"])
+        XCTAssertNil(environment["KITTY_WINDOW_ID"])
+        XCTAssertNil(environment["VTE_VERSION"])
+        XCTAssertNil(environment["WT_SESSION"])
+        XCTAssertNil(environment["CLAUDECODE"])
+        XCTAssertNil(environment["CLAUDE_CODE_SESSION_ID"])
+    }
+
+    func testTerminalBaseEnvironmentPreservesHyperlinkOptOut() {
+        let environment = ShellIntegration.terminalBaseEnvironment(
+            inherited: ["FORCE_HYPERLINK": "0"],
+            appVersion: nil)
+
+        XCTAssertEqual(environment["FORCE_HYPERLINK"], "0")
+        XCTAssertEqual(environment["TERM_PROGRAM_VERSION"], "0.0.0")
+    }
+
     func testChildEnvironmentInjectsForZsh() {
         let env = ShellIntegration.childEnvironment(
             shell: "/bin/zsh",
