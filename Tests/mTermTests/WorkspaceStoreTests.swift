@@ -309,6 +309,142 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.shortcutNumber(for: visible), 1)
     }
 
+    // MARK: terminal creation shortcuts
+
+    func testCommandNCreatesOpenSessionAndReplacesFocusedPaneNotHoveredPane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let left = store.sessions[0].id
+        store.createSession(asNewPane: true)
+        let focused = store.sessions[1].id
+        store.hoveredSessionID = left
+
+        store.createOpenSessionFromFocusedPane()
+
+        let created = store.sessions.last!
+        XCTAssertNil(created.workspaceID)
+        XCTAssertEqual(store.grid.paneIDs.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(left))
+        XCTAssertTrue(store.grid.paneIDs.contains(created.id))
+        XCTAssertFalse(store.grid.paneIDs.contains(focused))
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testShiftCommandNCreatesOpenSessionInAnotherPane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let original = store.sessions[0].id
+
+        store.createOpenSessionFromFocusedPane(asNewPane: true)
+
+        let created = store.sessions.last!
+        XCTAssertNil(created.workspaceID)
+        XCTAssertEqual(store.grid.paneIDs.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(original))
+        XCTAssertTrue(store.grid.paneIDs.contains(created.id))
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testShiftCommandNReplacesFocusedPaneWhenGridIsFull() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        for _ in 0..<5 {
+            store.createSession(asNewPane: true)
+        }
+        XCTAssertEqual(store.grid.paneIDs.count, 6)
+
+        store.focusGridPane(at: 1)
+        let focused = store.selectedSessionID!
+        store.hoveredSessionID = store.grid.paneIDs.last
+        let panesBefore = Set(store.grid.paneIDs)
+
+        store.createOpenSessionFromFocusedPane(asNewPane: true)
+
+        let created = store.sessions.last!
+        var expectedPanes = panesBefore
+        expectedPanes.remove(focused)
+        expectedPanes.insert(created.id)
+        XCTAssertEqual(Set(store.grid.paneIDs), expectedPanes)
+        XCTAssertEqual(store.grid.paneIDs.count, 6)
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testCommandTCreatesSessionAtFocusedWorkspaceRootAndReplacesFocusedPane() throws {
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(try JSONEncoder().encode([folder]), forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        let openSession = store.sessions[0].id
+        store.createSession(in: folder, asNewPane: true)
+        let focused = store.selectedSessionID!
+        store.setWorkingDirectory(focused, report: "/tmp/example-workspace/subdirectory")
+        store.hoveredSessionID = openSession
+
+        store.createWorkspaceSessionFromFocusedPane()
+
+        let created = store.sessions.last!
+        XCTAssertEqual(created.workspaceID, folder.id)
+        XCTAssertEqual(created.workingDirectory, folder.path)
+        XCTAssertEqual(store.grid.paneIDs.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(openSession))
+        XCTAssertTrue(store.grid.paneIDs.contains(created.id))
+        XCTAssertFalse(store.grid.paneIDs.contains(focused))
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testShiftCommandTCreatesSessionInAnotherPane() throws {
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(try JSONEncoder().encode([folder]), forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        store.createSession(in: folder)
+        let original = store.selectedSessionID!
+
+        store.createWorkspaceSessionFromFocusedPane(asNewPane: true)
+
+        let created = store.sessions.last!
+        XCTAssertEqual(created.workspaceID, folder.id)
+        XCTAssertEqual(store.grid.paneIDs.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(original))
+        XCTAssertTrue(store.grid.paneIDs.contains(created.id))
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testShiftCommandTReplacesFocusedPaneWhenGridIsFull() throws {
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(try JSONEncoder().encode([folder]), forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        for _ in 0..<5 {
+            store.createSession(in: folder, asNewPane: true)
+        }
+        XCTAssertEqual(store.grid.paneIDs.count, 6)
+
+        store.focusGridPane(at: 2)
+        let focused = store.selectedSessionID!
+        store.hoveredSessionID = store.grid.paneIDs.last
+        let panesBefore = Set(store.grid.paneIDs)
+
+        store.createWorkspaceSessionFromFocusedPane(asNewPane: true)
+
+        let created = store.sessions.last!
+        var expectedPanes = panesBefore
+        expectedPanes.remove(focused)
+        expectedPanes.insert(created.id)
+        XCTAssertEqual(created.workspaceID, folder.id)
+        XCTAssertEqual(Set(store.grid.paneIDs), expectedPanes)
+        XCTAssertEqual(store.grid.paneIDs.count, 6)
+        XCTAssertEqual(store.selectedSessionID, created.id)
+    }
+
+    func testCommandTIsNoOpWhenFocusedSessionIsNotInAWorkspace() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let sessionsBefore = store.sessions
+        let gridBefore = store.grid
+
+        store.createWorkspaceSessionFromFocusedPane()
+
+        XCTAssertEqual(store.sessions, sessionsBefore)
+        XCTAssertEqual(store.grid, gridBefore)
+    }
+
     // MARK: setForeground (shell integration icon state)
 
     func testSetForegroundTracksClaude() {

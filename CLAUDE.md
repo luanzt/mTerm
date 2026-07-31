@@ -33,6 +33,14 @@ mTerm is a macOS terminal-multiplexer app: a SwiftPM **executable** (not a Swift
 The manual menu currently owns these app-wide commands:
 
 - mTerm ▸ Check for Updates… — Sparkle's standard updater UI.
+- File ▸ New Terminal — ⌘N creates an ungrouped OPEN SESSIONS terminal in the
+  focused pane; ⇧⌘N opens it as another pane, or replaces the focused pane when
+  all six slots are occupied.
+- File ▸ New Workspace Terminal — ⌘T creates a terminal in the focused
+  session's workspace and replaces that pane; ⇧⌘T opens another pane with the
+  same six-pane fallback. Both are no-ops when the focused session is ungrouped.
+- Edit ▸ Copy / Paste — ⌘C / ⌘V route through the responder chain. There is no
+  Select All shortcut.
 - View ▸ Toggle Sidebar — ⌘B.
 - Panes ▸ Pane 1…6 — ⌘1…⌘6, in the same visual order as `grid.paneIDs`.
 
@@ -46,6 +54,8 @@ Single `@MainActor ObservableObject`, the source of truth for everything:
 All mutations (create/close/hide/place/maximize/resize) go through it. Only
 `workspaces` is persisted (UserDefaults); sessions are intentionally not.
 `savedGrid` backs maximize↔restore and is cleared by any structural grid change.
+Keyboard creation commands explicitly target `selectedSessionID`; sidebar
+actions remain hover-aware.
 
 ### Layout model: `PaneGrid` (Models/PaneGrid.swift)
 
