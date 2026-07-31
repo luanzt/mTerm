@@ -13,6 +13,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports standard OSC 0/2 terminal-title updates. WorkspaceStore accepts
     /// them only while Claude or Codex is the pane's foreground command.
     var onTitleChange: (String) -> Void = { _ in }
+    /// Reports standard OSC 7 current-directory updates so the pane header and
+    /// sidebar can follow the directory of the live shell.
+    var onWorkingDirectoryChange: (String?) -> Void = { _ in }
     /// Reports a trusted Claude Code Notification-hook event received by this
     /// pane's PTY through mTerm's private OSC 777 payload.
     var onClaudeAttention: (ClaudeIntegration.AttentionKind) -> Void = { _ in }
@@ -45,6 +48,7 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
         context.coordinator.onTerminalTitle = onTitleChange
+        context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         terminal.processDelegate = context.coordinator
 
         // Listen for the shell-integration marker (OSC 633). SwiftTerm checks
@@ -131,6 +135,7 @@ struct TerminalHostView: NSViewRepresentable {
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         nsView.isHidden = !isVisible
         context.coordinator.onTerminalTitle = onTitleChange
+        context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
@@ -180,6 +185,7 @@ struct TerminalHostView: NSViewRepresentable {
         var lastFileDropID: UUID?
         var foregroundCommand: String?
         var onTerminalTitle: (String) -> Void = { _ in }
+        var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         private var pendingTitleUpdate: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
@@ -220,7 +226,11 @@ struct TerminalHostView: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(
             source: TerminalView,
             directory: String?
-        ) {}
+        ) {
+            DispatchQueue.main.async { [weak self] in
+                self?.onWorkingDirectoryChange(directory)
+            }
+        }
 
         func processTerminated(
             source: TerminalView,

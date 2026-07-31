@@ -281,6 +281,37 @@ final class WorkspaceStore: ObservableObject {
         agentSessionTitles[session.id] ?? session.title
     }
 
+    /// Updates the live shell directory reported through OSC 7. Terminal
+    /// programs report a file URL rather than a filesystem path; keep only valid
+    /// absolute local paths so an unrelated OSC payload cannot replace the
+    /// session's launch/current-directory state.
+    func setWorkingDirectory(_ id: SessionRecord.ID, report: String?) {
+        guard let path = Self.workingDirectoryPath(from: report),
+              let index = sessions.firstIndex(where: { $0.id == id }),
+              sessions[index].workingDirectory != path else {
+            return
+        }
+        sessions[index].workingDirectory = path
+    }
+
+    private static func workingDirectoryPath(from report: String?) -> String? {
+        guard let report, !report.isEmpty else { return nil }
+
+        let url: URL
+        if report.hasPrefix("/") {
+            url = URL(fileURLWithPath: report)
+        } else {
+            guard let reportedURL = URL(string: report),
+                  reportedURL.isFileURL else {
+                return nil
+            }
+            url = reportedURL
+        }
+
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix("/") ? path : nil
+    }
+
     private func resolveCodexTitle(
         for sessionID: SessionRecord.ID,
         threadID: UUID

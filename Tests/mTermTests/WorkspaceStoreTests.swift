@@ -135,6 +135,29 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSession?.workspaceID, workspace.id)
     }
 
+    func testWorkingDirectoryFollowsTerminalOSC7Report() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let sessionID = store.sessions[0].id
+
+        store.setWorkingDirectory(
+            sessionID,
+            report: "file:///Users/test/Documents/Folder%20With%20Spaces")
+
+        XCTAssertEqual(
+            store.session(for: sessionID)?.workingDirectory,
+            "/Users/test/Documents/Folder With Spaces")
+    }
+
+    func testWorkingDirectoryIgnoresInvalidTerminalReport() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setWorkingDirectory(session.id, report: "https://example.com/not-a-directory")
+        store.setWorkingDirectory(UUID(), report: "file:///tmp/unrelated-session")
+
+        XCTAssertEqual(store.session(for: session.id)?.workingDirectory, session.workingDirectory)
+    }
+
     func testNewTerminalDoesNotBelongToAWorkspace() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let store = WorkspaceStore(defaults: defaults)

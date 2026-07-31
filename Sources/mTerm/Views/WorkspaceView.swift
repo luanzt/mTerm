@@ -741,6 +741,9 @@ private struct TerminalPane: View {
                                  onTitleChange: {
                                      workspace.setAgentTitle(session.id, title: $0)
                                  },
+                                 onWorkingDirectoryChange: {
+                                     workspace.setWorkingDirectory(session.id, report: $0)
+                                 },
                                  onClaudeAttention: {
                                      workspace.reportClaudeAttention(session.id, kind: $0)
                                  },

@@ -87,6 +87,9 @@ started from a **frame-change observer** (not `updateNSView`) the first time the
 view has a real non-zero frame, so the PTY's initial winsize matches the pane and
 prompts don't reprint on startup. `TerminalDeck.paneFrames` has a stderr tripwire
 that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a frame.
+Standard OSC 7 current-directory reports flow through the process delegate into
+`WorkspaceStore`, which updates the folder label shared by the pane header and
+sidebar without recreating the persistent terminal view.
 
 `ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
 with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
