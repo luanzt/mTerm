@@ -34,7 +34,7 @@ mouse; the sidebar is your session and workspace list.
 
 ### Sessions & workspace folders
 - **New terminal** — click **＋ New terminal** at the top of the sidebar. It
-  spawns a fresh shell in a new pane.
+  opens a fresh shell in the active pane; hold ⌘ while clicking to add a pane.
 - **Workspace folders** — group related terminals into folders (e.g. one folder
   per project). Add a folder with the **folder ＋** button; opening a terminal
   inside a folder starts it in that folder's chosen directory.
@@ -63,7 +63,12 @@ so you can see several shells at once.
 ### Keyboard
 | Shortcut | Action |
 |----------|--------|
+| **⌘N**   | Create an ungrouped terminal in **Open Sessions**, replacing the focused pane |
+| **⇧⌘N**  | Create an ungrouped terminal in another pane; replace the focused pane if all 6 are occupied |
+| **⌘T**   | Create a terminal in the focused session's workspace, replacing that pane |
+| **⇧⌘T**  | Create a terminal in that workspace in another pane; replace the focused pane if all 6 are occupied |
 | **⌘B**   | Toggle the sidebar (also **View ▸ Toggle Sidebar**, or the titlebar button) |
+| **⌘1…⌘6** | Focus the corresponding visible pane |
 
 > Hidden sessions keep running. A shell parked out of the visible grid is **not**
 > killed — its process stays alive so nothing is lost when you swap panes.

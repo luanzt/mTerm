@@ -75,9 +75,32 @@ final class WorkspaceStore: ObservableObject {
 
     func createSession(asNewPane: Bool = false) {
         let session = makeSession()
-        sessions.append(session)
-        if asNewPane { showInNewPane(session.id) } else { showInActivePane(session.id) }
-        persist()
+        addSession(session, asNewPane: asNewPane, replacingPane: activePaneSessionID)
+    }
+
+    /// ⌘N / ⇧⌘N: create an ungrouped terminal in OPEN SESSIONS. Keyboard
+    /// commands always target the focused pane, never the pane merely under the
+    /// mouse. A split falls back to replacing that focused pane at the six-pane
+    /// limit.
+    func createOpenSessionFromFocusedPane(asNewPane: Bool = false) {
+        let session = makeSession()
+        addSession(session, asNewPane: asNewPane, replacingPane: focusedPaneSessionID)
+    }
+
+    /// ⌘T / ⇧⌘T: create another terminal for the workspace owning the focused
+    /// pane. There is no project to infer from an ungrouped OPEN SESSIONS pane,
+    /// so that case is intentionally a no-op.
+    func createWorkspaceSessionFromFocusedPane(asNewPane: Bool = false) {
+        guard let focusedID = focusedPaneSessionID,
+              let focusedSession = session(for: focusedID),
+              let workspaceID = focusedSession.workspaceID,
+              let workspace = workspaces.first(where: { $0.id == workspaceID }) else {
+            return
+        }
+        let session = makeSession(
+            workingDirectory: workspace.path,
+            workspaceID: workspace.id)
+        addSession(session, asNewPane: asNewPane, replacingPane: focusedID)
     }
 
     func beginDragging(_ sessionID: SessionRecord.ID) {
@@ -152,9 +175,7 @@ final class WorkspaceStore: ObservableObject {
 
     func createSession(in workspace: WorkspaceFolder, asNewPane: Bool = false) {
         let session = makeSession(workingDirectory: workspace.path, workspaceID: workspace.id)
-        sessions.append(session)
-        if asNewPane { showInNewPane(session.id) } else { showInActivePane(session.id) }
-        persist()
+        addSession(session, asNewPane: asNewPane, replacingPane: activePaneSessionID)
     }
 
     func close(_ session: SessionRecord) {
@@ -446,16 +467,43 @@ final class WorkspaceStore: ObservableObject {
         return grid.paneIDs.first
     }
 
+    /// The keyboard target is the focused/selected visible pane. Falling back to
+    /// the first pane only covers transient states before selection catches up.
+    private var focusedPaneSessionID: SessionRecord.ID? {
+        if let selected = selectedSessionID, grid.paneIDs.contains(selected) { return selected }
+        return grid.paneIDs.first
+    }
+
+    private func addSession(_ session: SessionRecord,
+                            asNewPane: Bool,
+                            replacingPane target: SessionRecord.ID?) {
+        sessions.append(session)
+        if asNewPane {
+            showInNewPane(session.id, fallbackTarget: target)
+        } else {
+            show(session.id, inPaneWith: target)
+        }
+        persist()
+    }
+
     /// Show `id` in the active pane (the pane under the cursor), replacing whatever
     /// it currently shows — instead of collapsing to a single view. Falls back to a
     /// single-pane view when the grid is empty.
     private func showInActivePane(_ id: SessionRecord.ID) {
+        show(id, inPaneWith: activePaneSessionID)
+    }
+
+    private func show(_ id: SessionRecord.ID,
+                      inPaneWith target: SessionRecord.ID?) {
         guard sessions.contains(where: { $0.id == id }) else { return }
         savedGrid = nil
         // Already visible in some pane: just focus it, don't move it (moving would
         // collapse its current pane).
         if grid.paneIDs.contains(id) { selectedSessionID = id; return }
-        guard let target = activePaneSessionID else { openSingle(id); return }
+        guard let target, grid.paneIDs.contains(target) else {
+            openSingle(id)
+            return
+        }
         grid.place(id, onPaneWith: target, zone: .center)
         selectedSessionID = id
     }
@@ -464,7 +512,8 @@ final class WorkspaceStore: ObservableObject {
     /// column on the right while under the column cap, otherwise a row split of the
     /// first single-pane column. Falls back to replacing the active pane when the
     /// grid is completely full, and to a single-pane view when the grid is empty.
-    private func showInNewPane(_ id: SessionRecord.ID) {
+    private func showInNewPane(_ id: SessionRecord.ID,
+                               fallbackTarget: SessionRecord.ID? = nil) {
         guard sessions.contains(where: { $0.id == id }) else { return }
         savedGrid = nil
         if grid.paneIDs.contains(id) { selectedSessionID = id; return }
@@ -472,7 +521,9 @@ final class WorkspaceStore: ObservableObject {
         if grid.addPane(id) {
             selectedSessionID = id
         } else {
-            showInActivePane(id)   // grid full: fall back to replacing the active pane
+            // Keyboard-created splits pass the focused pane explicitly; sidebar
+            // actions pass their hover-aware active pane.
+            show(id, inPaneWith: fallbackTarget ?? activePaneSessionID)
         }
     }
 

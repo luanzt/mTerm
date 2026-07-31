@@ -89,6 +89,16 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         workspace.focusGridPane(at: sender.tag)
     }
 
+    @objc private func createOpenSession(_ sender: NSMenuItem) {
+        workspace.createOpenSessionFromFocusedPane(
+            asNewPane: sender.keyEquivalentModifierMask.contains(.shift))
+    }
+
+    @objc private func createWorkspaceSession(_ sender: NSMenuItem) {
+        workspace.createWorkspaceSessionFromFocusedPane(
+            asNewPane: sender.keyEquivalentModifierMask.contains(.shift))
+    }
+
     /// Pin the sidebar toggle to the trailing edge of the window titlebar (next
     /// to the "MTerm" title, flush against the window's right edge).
     private func installTitlebarToggle(in window: NSWindow) {
@@ -143,13 +153,35 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(quitItem)
         addSubmenu(applicationMenu, to: mainMenu)
 
-        // Edit — Copy / Paste / Select All route through the responder chain
-        // (nil target) to the focused terminal view, which implements them.
+        // File — keyboard terminal creation targets the focused pane. Shift asks
+        // for another pane; a full six-pane grid replaces the focused pane.
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(terminalCreationItem(
+            "New Terminal",
+            #selector(createOpenSession(_:)),
+            "n"))
+        fileMenu.addItem(terminalCreationItem(
+            "New Terminal in Split Pane",
+            #selector(createOpenSession(_:)),
+            "n",
+            modifiers: [.command, .shift]))
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(terminalCreationItem(
+            "New Workspace Terminal",
+            #selector(createWorkspaceSession(_:)),
+            "t"))
+        fileMenu.addItem(terminalCreationItem(
+            "New Workspace Terminal in Split Pane",
+            #selector(createWorkspaceSession(_:)),
+            "t",
+            modifiers: [.command, .shift]))
+        addSubmenu(fileMenu, to: mainMenu)
+
+        // Edit — Copy / Paste route through the responder chain (nil target) to
+        // the focused terminal view, which implements them.
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(menuItem("Copy", #selector(NSText.copy(_:)), "c"))
         editMenu.addItem(menuItem("Paste", #selector(NSText.paste(_:)), "v"))
-        editMenu.addItem(.separator())
-        editMenu.addItem(menuItem("Select All", #selector(NSText.selectAll(_:)), "a"))
         addSubmenu(editMenu, to: mainMenu)
 
         // View — Toggle Sidebar (⌘B).
@@ -184,6 +216,18 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private func menuItem(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.keyEquivalentModifierMask = .command
+        return item
+    }
+
+    private func terminalCreationItem(
+        _ title: String,
+        _ action: Selector,
+        _ key: String,
+        modifiers: NSEvent.ModifierFlags = .command
+    ) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers
+        item.target = self
         return item
     }
 
