@@ -7,6 +7,8 @@ organized in workspace folders. Built in Swift with SwiftUI + AppKit, backed by
 
 > **Requires macOS 14 (Sonoma) or later**, Apple Silicon or Intel.
 
+![mTerm showing six terminal sessions in a split-pane workspace](docs/images/mterm-overview.png)
+
 ---
 
 ## Install
