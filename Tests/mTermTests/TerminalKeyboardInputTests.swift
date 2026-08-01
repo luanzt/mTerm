@@ -83,4 +83,36 @@ final class TerminalKeyboardInputTests: XCTestCase {
             modifierFlags: [],
             foregroundCommand: "codex"))
     }
+
+    func testEscapeAndControlCInterruptActiveAgent() {
+        for command in ["claude", "codex"] {
+            XCTAssertTrue(TerminalKeyboardInput.isAgentInterruption(
+                keyCode: 53,
+                modifierFlags: [],
+                foregroundCommand: command))
+            XCTAssertTrue(TerminalKeyboardInput.isAgentInterruption(
+                keyCode: 8,
+                modifierFlags: .control,
+                foregroundCommand: command))
+        }
+    }
+
+    func testInterruptionKeysAreRestrictedToActiveAgentAndExactModifiers() {
+        XCTAssertFalse(TerminalKeyboardInput.isAgentInterruption(
+            keyCode: 53,
+            modifierFlags: [],
+            foregroundCommand: "git"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentInterruption(
+            keyCode: 53,
+            modifierFlags: .command,
+            foregroundCommand: "claude"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentInterruption(
+            keyCode: 8,
+            modifierFlags: [],
+            foregroundCommand: "codex"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentInterruption(
+            keyCode: 8,
+            modifierFlags: [.control, .shift],
+            foregroundCommand: "codex"))
+    }
 }

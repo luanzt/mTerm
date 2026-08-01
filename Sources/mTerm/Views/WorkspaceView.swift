@@ -956,6 +956,9 @@ private struct TerminalPane: View {
                                  onAgentInputSubmitted: {
                                      workspace.reportAgentInputSubmitted(session.id)
                                  },
+                                 onAgentWorkInterrupted: {
+                                     workspace.reportAgentWorkInterrupted(session.id)
+                                 },
                                  onFileDrop: {
                                      workspace.selectedSessionID = session.id
                                  })

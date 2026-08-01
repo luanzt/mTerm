@@ -235,10 +235,11 @@ underscore instead of a status dot; exited sessions dim that prompt motif.
 
 The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
 a submitted response. A plain Return in the agent pane starts the working state;
-the agent's trusted attention/completion event, returning to the shell, or closing
-the session clears it. Shift-Return and other modified Returns do not start the
-spinner because they edit or navigate the agent input rather than submit it. Keep
-this indicator out of pane headers and terminal content.
+the agent's trusted attention/completion event, Escape/Ctrl-C interruption,
+returning to the shell, or closing the session clears it. Shift-Return and other
+modified Returns do not start the spinner because they edit or navigate the agent
+input rather than submit it. Keep this indicator out of pane headers and terminal
+content.
 
 #### Agent conversation titles
 

@@ -27,6 +27,8 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports a submitted response while Claude/Codex owns the terminal. This
     /// is used only for the sidebar's transient working indicator.
     var onAgentInputSubmitted: () -> Void = {}
+    /// Clears the transient working indicator when the user interrupts a turn.
+    var onAgentWorkInterrupted: () -> Void = {}
     /// Selects the owning pane when Finder drops one or more files directly on
     /// its AppKit-backed terminal view.
     var onFileDrop: () -> Void = {}
@@ -68,6 +70,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
+        context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onFileDrop = onFileDrop
         terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
             DispatchQueue.main.async {
@@ -89,6 +92,12 @@ struct TerminalHostView: NSViewRepresentable {
                 foregroundCommand: context.coordinator.foregroundCommand
             ) {
                 context.coordinator.onAgentInputSubmitted()
+            } else if TerminalKeyboardInput.isAgentInterruption(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags,
+                foregroundCommand: context.coordinator.foregroundCommand
+            ) {
+                context.coordinator.onAgentWorkInterrupted()
             }
             guard let input = TerminalKeyboardInput.shiftEnter(
                 keyCode: event.keyCode,
@@ -184,6 +193,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
+        context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onFileDrop = onFileDrop
         if context.coordinator.appliedFontName != fontName
             || context.coordinator.appliedFontSize != fontSize {
@@ -239,6 +249,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         var onAgentInputSubmitted: () -> Void = {}
+        var onAgentWorkInterrupted: () -> Void = {}
         var onFileDrop: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
 
@@ -344,6 +355,25 @@ enum TerminalKeyboardInput {
         return modifierFlags
             .intersection([.shift, .command, .control, .option])
             .isEmpty
+    }
+
+    /// Claude and Codex both use Escape or Ctrl-C to interrupt an active turn.
+    /// That transition can remain inside the TUI, so shell foreground tracking
+    /// and attention hooks do not reliably observe it.
+    static func isAgentInterruption(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        foregroundCommand: String?
+    ) -> Bool {
+        guard foregroundCommand == "claude" || foregroundCommand == "codex" else {
+            return false
+        }
+
+        let modifiers = modifierFlags.intersection([.shift, .command, .control, .option])
+        if keyCode == 53 { // Escape
+            return modifiers.isEmpty
+        }
+        return keyCode == 8 && modifiers == .control // Ctrl-C
     }
 }
 
