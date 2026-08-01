@@ -6,7 +6,6 @@ struct TerminalHostView: NSViewRepresentable {
     let session: SessionRecord
     let isVisible: Bool
     let isFocused: Bool
-    let fileDropRequest: TerminalFileDropRequest?
     let fontName: String
     let fontSize: Double
     let ansiColors: [UInt32]
@@ -28,13 +27,16 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports a submitted response while Claude/Codex owns the terminal. This
     /// is used only for the sidebar's transient working indicator.
     var onAgentInputSubmitted: () -> Void = {}
+    /// Selects the owning pane when Finder drops one or more files directly on
+    /// its AppKit-backed terminal view.
+    var onFileDrop: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
-        let terminal = LocalProcessTerminalView(frame: .zero)
+        let terminal = FileDroppableTerminalView(frame: .zero)
         // SwiftTerm installs a standalone NSScroller along the trailing edge.
         // mTerm keeps scrollback available through the terminal's own
         // wheel/trackpad handling, but hides the persistent gray indicator so
@@ -66,6 +68,13 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
+        context.coordinator.onFileDrop = onFileDrop
+        terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
+            DispatchQueue.main.async {
+                guard let coordinator, let terminal else { return }
+                coordinator.receiveDroppedFiles(urls, in: terminal)
+            }
+        }
         terminal.processDelegate = context.coordinator
         context.coordinator.keyDownMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
@@ -175,6 +184,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
+        context.coordinator.onFileDrop = onFileDrop
         if context.coordinator.appliedFontName != fontName
             || context.coordinator.appliedFontSize != fontSize {
             nsView.font = terminalFont
@@ -188,20 +198,6 @@ struct TerminalHostView: NSViewRepresentable {
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
-
-        if isVisible,
-           let request = fileDropRequest,
-           context.coordinator.lastFileDropID != request.id {
-            context.coordinator.lastFileDropID = request.id
-            nsView.window?.makeFirstResponder(nsView)
-            let bracketedPaste = nsView.getTerminal().bracketedPasteMode
-            for chunk in TerminalFileDrop.terminalInputChunks(
-                for: request.urls,
-                bracketedPaste: bracketedPaste
-            ) {
-                nsView.send(chunk)
-            }
-        }
 
         // Give keyboard focus to the selected pane's terminal so typing works
         // right after picking a session in the sidebar — without stealing focus
@@ -236,7 +232,6 @@ struct TerminalHostView: NSViewRepresentable {
         var frameObserver: NSObjectProtocol?
         var keyDownMonitor: Any?
         var startShell: ((LocalProcessTerminalView) -> Void)?
-        var lastFileDropID: UUID?
         var foregroundCommand: String?
         var appliedFontName: String?
         var appliedFontSize: Double?
@@ -244,6 +239,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         var onAgentInputSubmitted: () -> Void = {}
+        var onFileDrop: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
@@ -258,6 +254,22 @@ struct TerminalHostView: NSViewRepresentable {
             newCols: Int,
             newRows: Int
         ) {}
+
+        func receiveDroppedFiles(
+            _ urls: [URL],
+            in terminal: LocalProcessTerminalView
+        ) {
+            guard !urls.isEmpty else { return }
+            onFileDrop()
+            terminal.window?.makeFirstResponder(terminal)
+            let bracketedPaste = terminal.getTerminal().bracketedPasteMode
+            for chunk in TerminalFileDrop.terminalInputChunks(
+                for: urls,
+                bracketedPaste: bracketedPaste
+            ) {
+                terminal.send(chunk)
+            }
+        }
 
         func setTerminalTitle(
             source: LocalProcessTerminalView,
@@ -335,9 +347,48 @@ enum TerminalKeyboardInput {
     }
 }
 
-struct TerminalFileDropRequest {
-    let id = UUID()
-    let urls: [URL]
+/// SwiftUI drop modifiers above an `NSViewRepresentable` do not reliably receive
+/// Finder drags because AppKit routes the dragging session to the embedded view.
+/// Register the real SwiftTerm view as the destination instead.
+final class FileDroppableTerminalView: LocalProcessTerminalView {
+    var onFileDrop: ([URL]) -> Void = { _ in }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        fileURLs(from: sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = fileURLs(from: sender)
+        guard !urls.isEmpty else { return false }
+        onFileDrop(urls)
+        return true
+    }
+
+    private func fileURLs(from sender: NSDraggingInfo) -> [URL] {
+        Self.fileURLs(from: sender.draggingPasteboard)
+    }
+
+    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+        let objects = pasteboard.readObjects(
+            forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]
+        ) as? [NSURL]
+        return objects?.map { $0 as URL }.filter(\.isFileURL) ?? []
+    }
 }
 
 enum TerminalFileDrop {

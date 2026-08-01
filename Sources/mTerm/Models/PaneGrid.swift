@@ -45,6 +45,32 @@ struct PaneGrid: Equatable {
         return zones
     }
 
+    /// Valid destinations for moving a pane that is already visible. Capacity
+    /// is evaluated after hypothetically removing the source, so moving the sole
+    /// pane out of one of three columns can still create a column beside the
+    /// target, and two rows in the same column can be reordered.
+    func allowedZonesForMovingPane(
+        _ dragged: UUID,
+        onPaneWith target: UUID
+    ) -> Set<DropZone> {
+        guard dragged != target,
+              location(of: dragged) != nil,
+              location(of: target) != nil else { return [] }
+
+        var remainder = self
+        remainder.remove(dragged)
+        guard let targetLocation = remainder.location(of: target) else { return [] }
+
+        var zones: Set<DropZone> = [.center]
+        if remainder.columns.count < Self.maxColumns {
+            zones.formUnion([.left, .right])
+        }
+        if remainder.columns[targetLocation.column].panes.count == 1 {
+            zones.formUnion([.top, .bottom])
+        }
+        return zones
+    }
+
     /// Adds a brand-new pane in its own slot without displacing existing panes.
     /// Prefers a new column on the right (while under the column cap); otherwise
     /// splits the first single-pane column into two rows. Returns `false` when the
@@ -87,6 +113,46 @@ struct PaneGrid: Equatable {
             columns[loc.column].panes.insert(dragged, at: 0)
         case .bottom:
             columns[loc.column].panes.append(dragged)
+        }
+        enforceInvariants()
+    }
+
+    /// Moves a pane that is already in the grid. Center swaps the two visual
+    /// slots; edge zones relocate the source without hiding the target.
+    mutating func movePane(
+        _ dragged: UUID,
+        onPaneWith target: UUID,
+        zone: DropZone
+    ) {
+        guard allowedZonesForMovingPane(dragged, onPaneWith: target).contains(zone),
+              let sourceLocation = location(of: dragged),
+              let targetLocation = location(of: target) else { return }
+
+        if zone == .center {
+            columns[sourceLocation.column].panes[sourceLocation.row] = target
+            columns[targetLocation.column].panes[targetLocation.row] = dragged
+            enforceInvariants()
+            return
+        }
+
+        remove(dragged)
+        guard let location = location(of: target) else { return }
+
+        switch zone {
+        case .center:
+            break
+        case .left:
+            columns.insert(GridColumn(panes: [dragged]), at: location.column)
+            normalizeWidths()
+        case .right:
+            columns.insert(GridColumn(panes: [dragged]), at: location.column + 1)
+            normalizeWidths()
+        case .top:
+            columns[location.column].rowFraction = 0.5
+            columns[location.column].panes.insert(dragged, at: 0)
+        case .bottom:
+            columns[location.column].rowFraction = 0.5
+            columns[location.column].panes.append(dragged)
         }
         enforceInvariants()
     }

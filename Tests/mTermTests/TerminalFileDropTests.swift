@@ -1,8 +1,24 @@
 import Foundation
+import AppKit
 import XCTest
 @testable import mTerm
 
 final class TerminalFileDropTests: XCTestCase {
+    func testNativeTerminalRegistersForFinderFileURLs() {
+        let terminal = FileDroppableTerminalView(frame: .zero)
+
+        XCTAssertTrue(terminal.registeredDraggedTypes.contains(.fileURL))
+    }
+
+    func testNativeDropReadsFileURLFromPasteboard() {
+        let pasteboard = NSPasteboard(name: .init("mterm-file-drop-\(UUID().uuidString)"))
+        let url = URL(fileURLWithPath: "/tmp/Simulator Screenshot.png")
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.writeObjects([url as NSURL]))
+
+        XCTAssertEqual(FileDroppableTerminalView.fileURLs(from: pasteboard), [url])
+    }
+
     func testShellInputForNoFilesIsEmpty() {
         XCTAssertEqual(TerminalFileDrop.shellInput(for: []), "")
     }

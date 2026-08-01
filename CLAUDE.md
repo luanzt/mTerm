@@ -104,6 +104,16 @@ to right, then panes from top to bottom within each column. Both
 `WorkspaceStore.focusGridPane(at:)` and `shortcutNumber(for:)` must derive from
 that same array. Visible pane headers show the matching `⌘N` badge immediately
 to the left of the maximize/restore button; hidden sessions have no shortcut.
+Keep the badge and header buttons horizontally fixed so a long agent title can
+truncate without collapsing those controls.
+
+Visible panes can be dragged only from their identity area in the header; pane
+drag is disabled while maximized. A center drop swaps the two visual slots,
+while edge drops move the source beside/above/below the target without hiding a
+session. Capacity checks run after hypothetically removing the source, allowing
+same-column row reorder and reuse of a column freed at the three-column limit.
+New row moves reset that column to 50/50. Keep this pane-move state distinct from
+sidebar session drags, whose center drop retains its open/replace behavior.
 
 ### Rendering: `WorkspaceView.swift`
 
@@ -136,6 +146,11 @@ that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a f
 The bridge's focused-terminal key monitor maps Shift-Return and
 Shift-keypad-Enter to LF (the same terminal input as Ctrl-J), so agent TUIs
 insert a newline while plain Return keeps its normal CR/submit behavior.
+Finder file drops are registered directly on the `FileDroppableTerminalView`
+subclass rather than on a surrounding SwiftUI modifier: AppKit routes dragging
+sessions to the embedded `NSView`. A drop focuses its pane and sends one escaped
+path per file, using bracketed paste when the terminal mode requests it so
+image-aware agent TUIs can attach Simulator screenshots.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.

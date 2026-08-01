@@ -561,7 +561,8 @@ private struct SessionReorderDropDelegate: DropDelegate {
     let workspace: WorkspaceStore
 
     func validateDrop(info: DropInfo) -> Bool {
-        guard let dragged = workspace.draggedSessionID else { return false }
+        guard workspace.draggedPaneSessionID == nil,
+              let dragged = workspace.draggedSessionID else { return false }
         return dragged != targetID && sameSection(dragged)
     }
 
@@ -576,7 +577,9 @@ private struct SessionReorderDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         defer { workspace.finishDragging(); dropTarget = nil }
-        guard let dragged = workspace.draggedSessionID, let target = dropTarget else {
+        guard workspace.draggedPaneSessionID == nil,
+              let dragged = workspace.draggedSessionID,
+              let target = dropTarget else {
             return false
         }
         workspace.moveSession(dragged, relativeTo: target.id, insertAfter: target.after)
@@ -588,7 +591,8 @@ private struct SessionReorderDropDelegate: DropDelegate {
     }
 
     private func update(_ info: DropInfo) {
-        guard let dragged = workspace.draggedSessionID,
+        guard workspace.draggedPaneSessionID == nil,
+              let dragged = workspace.draggedSessionID,
               dragged != targetID, sameSection(dragged) else {
             dropTarget = nil
             return
@@ -919,7 +923,6 @@ private struct TerminalPane: View {
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
-    @State private var fileDropRequest: TerminalFileDropRequest?
 
     var body: some View {
         GeometryReader { proxy in
@@ -932,7 +935,6 @@ private struct TerminalPane: View {
                 TerminalHostView(session: session,
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
-                                 fileDropRequest: fileDropRequest,
                                  fontName: settings.terminalFontName,
                                  fontSize: settings.terminalFontSize,
                                  ansiColors: settings.ansiColors,
@@ -953,6 +955,9 @@ private struct TerminalPane: View {
                                  },
                                  onAgentInputSubmitted: {
                                      workspace.reportAgentInputSubmitted(session.id)
+                                 },
+                                 onFileDrop: {
+                                     workspace.selectedSessionID = session.id
                                  })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
@@ -982,7 +987,10 @@ private struct TerminalPane: View {
                     ZStack {
                         Color.clear
                         if let dropZone {
-                            TerminalDropPreview(zone: dropZone, size: proxy.size)
+                            TerminalDropPreview(
+                                zone: dropZone,
+                                size: proxy.size,
+                                isPaneMove: workspace.draggedPaneSessionID != nil)
                         }
                     }
                     .contentShape(Rectangle())
@@ -1000,35 +1008,22 @@ private struct TerminalPane: View {
             .onHover { hovering in
                 if hovering { workspace.hoveredSessionID = session.id }
             }
-            // Register Finder URLs on the pane itself (outside the internal
-            // session-drag overlay), then relay the resulting input to this
-            // pane's persistent SwiftTerm view.
-            .dropDestination(for: URL.self) { urls, _ in
-                let fileURLs = urls.filter(\.isFileURL)
-                guard !fileURLs.isEmpty else { return false }
-                workspace.selectedSessionID = session.id
-                fileDropRequest = TerminalFileDropRequest(urls: fileURLs)
-                return true
-            }
         }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            SessionStatusIcon(
-                status: session.status,
-                isClaude: workspace.claudeSessionIDs.contains(session.id),
-                isCodex: workspace.codexSessionIDs.contains(session.id))
-            Text(workspace.displayTitle(for: session))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(MTermTheme.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-            Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
-                .font(.system(size: 10.5, design: .monospaced))
-                .foregroundStyle(MTermTheme.dim2)
-                .lineLimit(1)
+            Group {
+                if workspace.isMaximized {
+                    paneIdentity
+                } else {
+                    paneIdentity.onDrag {
+                        workspace.beginDraggingPane(session.id)
+                        return NSItemProvider(object: session.id.uuidString as NSString)
+                    }
+                }
+            }
+            .layoutPriority(1)
             Spacer(minLength: 6)
             if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
                 PaneShortcutBadge(number: shortcutNumber)
@@ -1061,6 +1056,28 @@ private struct TerminalPane: View {
         }
     }
 
+    private var paneIdentity: some View {
+        HStack(spacing: 8) {
+            SessionStatusIcon(
+                status: session.status,
+                isClaude: workspace.claudeSessionIDs.contains(session.id),
+                isCodex: workspace.codexSessionIDs.contains(session.id))
+            Text(workspace.displayTitle(for: session))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(MTermTheme.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(MTermTheme.dim2)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(-1)
+        }
+        .contentShape(Rectangle())
+        .help(workspace.isMaximized ? "Restore the layout to move this pane" : "Drag to move this pane")
+    }
+
     private var isFocused: Bool {
         session.id == workspace.selectedSessionID
     }
@@ -1086,6 +1103,7 @@ private struct PaneShortcutBadge: View {
                 RoundedRectangle(cornerRadius: 5)
                     .stroke(MTermTheme.controlBorder, lineWidth: 1)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .help("Switch to this pane (⌘\(number))")
     }
 }
@@ -1118,6 +1136,7 @@ private struct PaneHeaderButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.borderless)
+        .fixedSize(horizontal: true, vertical: false)
         .onHover { isHovering = $0 }
         .help(help)
     }
@@ -1126,6 +1145,7 @@ private struct PaneHeaderButton: View {
 private struct TerminalDropPreview: View {
     let zone: DropZone
     let size: CGSize
+    let isPaneMove: Bool
 
     var body: some View {
         let rect = previewRect
@@ -1133,11 +1153,22 @@ private struct TerminalDropPreview: View {
             RoundedRectangle(cornerRadius: 10).fill(.ultraThinMaterial)
             RoundedRectangle(cornerRadius: 10).fill(.black.opacity(0.38))
             RoundedRectangle(cornerRadius: 10).stroke(MTermTheme.accent, lineWidth: 2)
-            badge(zone == .center ? "Open here" : "Split")
+            badge(previewTitle)
         }
         .frame(width: rect.width, height: rect.height)
         .position(x: rect.midX, y: rect.midY)
         .allowsHitTesting(false)
+    }
+
+    private var previewTitle: String {
+        guard isPaneMove else { return zone == .center ? "Open here" : "Split" }
+        switch zone {
+        case .center: return "Swap"
+        case .left: return "Move left"
+        case .right: return "Move right"
+        case .top: return "Move above"
+        case .bottom: return "Move below"
+        }
     }
 
     private var previewRect: CGRect {
@@ -1187,7 +1218,8 @@ private struct TerminalPaneDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         update(info)
-        return DropProposal(operation: dropZone == nil ? .cancel : .copy)
+        let operation: DropOperation = workspace.draggedPaneSessionID == nil ? .copy : .move
+        return DropProposal(operation: dropZone == nil ? .cancel : operation)
     }
 
     func dropExited(info: DropInfo) { dropZone = nil }
@@ -1198,7 +1230,11 @@ private struct TerminalPaneDropDelegate: DropDelegate {
             dropZone = nil
             return false
         }
-        workspace.place(dragged, onPaneWith: targetSessionID, zone: zone)
+        if workspace.draggedPaneSessionID == dragged {
+            workspace.movePane(dragged, onPaneWith: targetSessionID, zone: zone)
+        } else {
+            workspace.place(dragged, onPaneWith: targetSessionID, zone: zone)
+        }
         dropZone = nil
         return true
     }
@@ -1208,13 +1244,23 @@ private struct TerminalPaneDropDelegate: DropDelegate {
         // Dropping a pane's own session back onto that pane is a no-op in every
         // zone (guarded in PaneGrid.place), so never show a preview for it.
         guard dragged != targetSessionID else { dropZone = nil; return }
-        dropZone = filtered(info, workspace.allowedZones(forPaneWith: targetSessionID))
+        let allowed = workspace.draggedPaneSessionID == dragged
+            ? workspace.allowedZonesForMovingPane(dragged, onPaneWith: targetSessionID)
+            : workspace.allowedZones(forPaneWith: targetSessionID)
+        dropZone = filtered(
+            info,
+            allowed,
+            fallbackToCenter: workspace.draggedPaneSessionID != dragged)
     }
 
-    private func filtered(_ info: DropInfo, _ allowed: Set<DropZone>) -> DropZone? {
+    private func filtered(
+        _ info: DropInfo,
+        _ allowed: Set<DropZone>,
+        fallbackToCenter: Bool
+    ) -> DropZone? {
         let z = zone(for: info.location)
         if allowed.contains(z) { return z }
-        return allowed.contains(.center) ? .center : nil
+        return fallbackToCenter && allowed.contains(.center) ? .center : nil
     }
 
     private func zone(for point: CGPoint) -> DropZone {

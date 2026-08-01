@@ -327,6 +327,48 @@ final class WorkspaceStoreTests: XCTestCase {
                        [.center, .left, .right, .top, .bottom])
     }
 
+    func testPaneHeaderDragTracksDistinctMoveState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let id = store.sessions[0].id
+
+        store.beginDraggingPane(id)
+        XCTAssertEqual(store.draggedSessionID, id)
+        XCTAssertEqual(store.draggedPaneSessionID, id)
+
+        store.finishDragging()
+        XCTAssertNil(store.draggedSessionID)
+        XCTAssertNil(store.draggedPaneSessionID)
+    }
+
+    func testPaneHeaderDragIsDisabledWhileMaximized() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)
+        store.toggleMaximize(a)
+
+        store.beginDraggingPane(a)
+
+        XCTAssertNil(store.draggedSessionID)
+        XCTAssertNil(store.draggedPaneSessionID)
+    }
+
+    func testMovePaneSwapsAndSelectsDraggedPane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)
+
+        store.movePane(a, onPaneWith: b, zone: .center)
+
+        XCTAssertEqual(store.grid.paneIDs, [b, a])
+        XCTAssertEqual(store.selectedSessionID, a)
+    }
+
     func testToggleMaximizeCollapsesThenRestoresLayout() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let a = store.sessions[0].id

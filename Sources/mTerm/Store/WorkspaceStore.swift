@@ -11,6 +11,9 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var workspaces: [WorkspaceFolder]
     @Published var selectedSessionID: SessionRecord.ID?
     @Published var draggedSessionID: SessionRecord.ID?
+    /// Non-nil only when a visible pane header initiated the current session
+    /// drag. Sidebar drags keep their existing open/replace semantics.
+    @Published private(set) var draggedPaneSessionID: SessionRecord.ID?
     @Published var draggedWorkspaceID: WorkspaceFolder.ID?
     @Published var isSidebarVisible = true
     @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
@@ -116,6 +119,14 @@ final class WorkspaceStore: ObservableObject {
         installDragEndMonitor()
     }
 
+    func beginDraggingPane(_ sessionID: SessionRecord.ID) {
+        guard !isMaximized, grid.paneIDs.contains(sessionID) else { return }
+        finishDragging()
+        draggedSessionID = sessionID
+        draggedPaneSessionID = sessionID
+        installDragEndMonitor()
+    }
+
     func beginDraggingWorkspace(_ workspaceID: WorkspaceFolder.ID) {
         finishDragging()
         draggedWorkspaceID = workspaceID
@@ -143,6 +154,7 @@ final class WorkspaceStore: ObservableObject {
             self.dragEndMonitor = nil
         }
         draggedSessionID = nil
+        draggedPaneSessionID = nil
         draggedWorkspaceID = nil
     }
 
@@ -632,6 +644,13 @@ final class WorkspaceStore: ObservableObject {
         grid.allowedZones(forPaneWith: id)
     }
 
+    func allowedZonesForMovingPane(
+        _ dragged: SessionRecord.ID,
+        onPaneWith target: SessionRecord.ID
+    ) -> Set<DropZone> {
+        grid.allowedZonesForMovingPane(dragged, onPaneWith: target)
+    }
+
     func place(_ dragged: SessionRecord.ID,
                onPaneWith target: SessionRecord.ID,
                zone: DropZone) {
@@ -639,6 +658,21 @@ final class WorkspaceStore: ObservableObject {
               sessions.contains(where: { $0.id == target }) else { return }
         savedGrid = nil
         grid.place(dragged, onPaneWith: target, zone: zone)
+        if grid.paneIDs.contains(dragged) {
+            selectedSessionID = dragged
+        }
+    }
+
+    func movePane(
+        _ dragged: SessionRecord.ID,
+        onPaneWith target: SessionRecord.ID,
+        zone: DropZone
+    ) {
+        guard !isMaximized,
+              sessions.contains(where: { $0.id == dragged }),
+              sessions.contains(where: { $0.id == target }) else { return }
+        savedGrid = nil
+        grid.movePane(dragged, onPaneWith: target, zone: zone)
         if grid.paneIDs.contains(dragged) {
             selectedSessionID = dragged
         }

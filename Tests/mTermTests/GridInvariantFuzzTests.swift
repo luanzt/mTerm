@@ -56,7 +56,7 @@ final class GridInvariantFuzzTests: XCTestCase {
             for _ in 0..<20 {
                 let paneIDs = store.grid.paneIDs
                 let allSessions = store.sessions.map(\.id)
-                let op = Int.random(in: 0..<6, using: &rng)
+                let op = Int.random(in: 0..<7, using: &rng)
                 switch op {
                 case 0:
                     store.createSession()
@@ -80,6 +80,14 @@ final class GridInvariantFuzzTests: XCTestCase {
                     let victim = store.sessions.randomElement(using: &rng)!
                     store.close(victim)
                     steps.append("close")
+                case 5 where paneIDs.count > 1:
+                    let dragged = paneIDs.randomElement(using: &rng)!
+                    let targets = paneIDs.filter { $0 != dragged }
+                    let target = targets.randomElement(using: &rng)!
+                    let zones: [DropZone] = [.center, .left, .right, .top, .bottom]
+                    let zone = zones.randomElement(using: &rng)!
+                    store.movePane(dragged, onPaneWith: target, zone: zone)
+                    steps.append("movePane \(zone)")
                 default:
                     store.createSession()
                     steps.append("create*")

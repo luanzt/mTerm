@@ -110,6 +110,63 @@ final class PaneGridTests: XCTestCase {
         XCTAssertEqual(g.columns[0].panes, [a, b])
     }
 
+    func testMovePaneCenterSwapsVisualSlots() {
+        var g = PaneGrid.single(a)
+        g.place(b, onPaneWith: a, zone: .right)
+
+        g.movePane(a, onPaneWith: b, zone: .center)
+
+        XCTAssertEqual(g.paneIDs, [b, a])
+    }
+
+    func testMovePaneCenterSwapsRowsInSameColumn() {
+        var g = PaneGrid.single(a)
+        g.place(b, onPaneWith: a, zone: .bottom)
+
+        g.movePane(a, onPaneWith: b, zone: .center)
+
+        XCTAssertEqual(g.columns[0].panes, [b, a])
+    }
+
+    func testMovePaneCanReorderRowsAndResetsRatio() {
+        var g = PaneGrid.single(a)
+        g.place(b, onPaneWith: a, zone: .bottom)
+        g.resizeRow(columnIndex: 0, topFraction: 0.8)
+
+        XCTAssertTrue(g.allowedZonesForMovingPane(a, onPaneWith: b).contains(.bottom))
+        g.movePane(a, onPaneWith: b, zone: .bottom)
+
+        XCTAssertEqual(g.columns[0].panes, [b, a])
+        XCTAssertEqual(g.columns[0].rowFraction, 0.5, accuracy: 0.0001)
+    }
+
+    func testMovePaneCanReuseColumnFreedAtThreeColumnLimit() {
+        var g = PaneGrid.single(a)
+        g.place(b, onPaneWith: a, zone: .right)
+        g.place(c, onPaneWith: b, zone: .right)
+
+        XCTAssertTrue(g.allowedZonesForMovingPane(a, onPaneWith: c).contains(.right))
+        g.movePane(a, onPaneWith: c, zone: .right)
+
+        XCTAssertEqual(g.paneIDs, [b, c, a])
+        XCTAssertEqual(g.columns.count, 3)
+    }
+
+    func testMovePaneCannotCreateFourthColumnWhenSourceColumnRemains() {
+        var g = PaneGrid.single(a)
+        g.place(b, onPaneWith: a, zone: .bottom)
+        g.place(c, onPaneWith: a, zone: .right)
+        g.place(d, onPaneWith: c, zone: .right)
+        let original = g
+
+        let zones = g.allowedZonesForMovingPane(a, onPaneWith: d)
+        XCTAssertFalse(zones.contains(.left))
+        XCTAssertFalse(zones.contains(.right))
+        g.movePane(a, onPaneWith: d, zone: .right)
+
+        XCTAssertEqual(g, original)
+    }
+
     func testRemoveDropsEmptyColumnAndNormalizes() {
         var g = PaneGrid.single(a)
         g.place(b, onPaneWith: a, zone: .right)
