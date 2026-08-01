@@ -3,6 +3,76 @@ import XCTest
 
 @MainActor
 final class WorkspaceStoreTests: XCTestCase {
+    func testRenameWorkspaceChangesOnlyDisplayNameAndPersists() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+
+        store.renameWorkspace(folder.id, to: "  Client   API  ")
+
+        XCTAssertEqual(store.workspaces[0].name, "Client API")
+        XCTAssertEqual(store.workspaces[0].path, "/tmp/example-workspace")
+
+        let reloadedStore = WorkspaceStore(defaults: defaults)
+        XCTAssertEqual(reloadedStore.workspaces[0].name, "Client API")
+        XCTAssertEqual(reloadedStore.workspaces[0].path, "/tmp/example-workspace")
+    }
+
+    func testInvalidWorkspaceRenameLeavesNameUnchanged() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+
+        store.renameWorkspace(folder.id, to: "   \n   ")
+
+        XCTAssertEqual(store.workspaces[0].name, "example-workspace")
+    }
+
+    func testRemoveWorkspaceDetachesSessionsWithoutClosingThem() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        store.createSession(in: folder)
+        let session = try XCTUnwrap(store.sessions.last)
+
+        store.removeWorkspace(folder.id)
+
+        XCTAssertTrue(store.workspaces.isEmpty)
+        XCTAssertEqual(store.session(for: session.id)?.workspaceID, nil)
+        XCTAssertEqual(store.session(for: session.id)?.status, .running)
+        XCTAssertTrue(store.grid.paneIDs.contains(session.id))
+    }
+
+    func testCreateSessionInSameDirectoryPreservesWorkspaceAndOpensSplit() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        store.createSession(in: folder)
+        let source = try XCTUnwrap(store.sessions.last)
+        store.setWorkingDirectory(source.id, report: "file:///tmp/example-workspace/Sources")
+
+        store.createSessionInSameDirectory(as: source.id)
+
+        let created = try XCTUnwrap(store.sessions.last)
+        XCTAssertNotEqual(created.id, source.id)
+        XCTAssertEqual(created.workingDirectory, "/tmp/example-workspace/Sources")
+        XCTAssertEqual(created.workspaceID, folder.id)
+        XCTAssertTrue(store.grid.paneIDs.contains(source.id))
+        XCTAssertTrue(store.grid.paneIDs.contains(created.id))
+    }
+
     func testCloseSelectsRemainingSession() {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let store = WorkspaceStore(defaults: defaults)
@@ -101,6 +171,72 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.grid.columns[0].panes, [a])
         XCTAssertEqual(store.grid.columns[1].panes, [b])
         XCTAssertEqual(store.selectedSessionID, b)           // just focused
+    }
+
+    func testRenameSessionUpdatesStableAndDisplayedTitle() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.renameSession(session.id, to: "  API   server  ")
+
+        XCTAssertEqual(store.session(for: session.id)?.title, "API server")
+        XCTAssertEqual(
+            store.session(for: session.id).map(store.displayTitle(for:)),
+            "API server")
+    }
+
+    func testUserRenameOverridesAgentTitle() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+        store.setForeground(session.id, command: "claude")
+        store.setAgentTitle(session.id, title: "Agent conversation")
+
+        store.renameSession(session.id, to: "My terminal")
+        store.setAgentTitle(session.id, title: "Later agent title")
+
+        XCTAssertEqual(
+            store.session(for: session.id).map(store.displayTitle(for:)),
+            "My terminal")
+    }
+
+    func testRenameSessionRejectsEmptyAndControlCharacterTitles() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.renameSession(session.id, to: "   ")
+        store.renameSession(session.id, to: "bad\ntitle")
+
+        XCTAssertEqual(store.session(for: session.id)?.title, session.title)
+    }
+
+    func testOpenInNewPaneAddsHiddenSessionWithoutReplacingVisiblePane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let hidden = store.sessions[0].id
+        store.createSession()
+        let visible = store.sessions[1].id
+        XCTAssertEqual(store.grid.paneIDs, [visible])
+
+        store.openInNewPane(hidden)
+
+        XCTAssertEqual(store.grid.paneIDs.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(hidden))
+        XCTAssertTrue(store.grid.paneIDs.contains(visible))
+        XCTAssertEqual(store.selectedSessionID, hidden)
+    }
+
+    func testOpenInNewPaneFocusesAlreadyVisibleSessionWithoutChangingLayout() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openInNewPane(a)
+        let layout = store.grid
+        store.openInActivePane(b)
+
+        store.openInNewPane(a)
+
+        XCTAssertEqual(store.grid, layout)
+        XCTAssertEqual(store.selectedSessionID, a)
     }
 
     func testSessionsAreNotPersistedAcrossStoreInit() {

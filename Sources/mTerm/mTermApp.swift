@@ -6,7 +6,9 @@ import SwiftUI
 @MainActor
 final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
+    private let settings = AppSettings()
     private var window: NSWindow?
+    private var settingsWindow: NSWindow?
     private lazy var agentNotifications = AgentNotificationCoordinator()
     private var cancellables: Set<AnyCancellable> = []
     private lazy var updaterController = SPUStandardUpdaterController(
@@ -33,6 +35,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         installMainMenu()
         let content = WorkspaceView()
             .environmentObject(workspace)
+            .environmentObject(settings)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
@@ -91,12 +94,51 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func createOpenSession(_ sender: NSMenuItem) {
         workspace.createOpenSessionFromFocusedPane(
-            asNewPane: sender.keyEquivalentModifierMask.contains(.shift))
+            asNewPane: sender.keyEquivalentModifierMask.contains(.shift)
+                || settings.opensNewTerminalsInSplit)
     }
 
     @objc private func createWorkspaceSession(_ sender: NSMenuItem) {
         workspace.createWorkspaceSessionFromFocusedPane(
-            asNewPane: sender.keyEquivalentModifierMask.contains(.shift))
+            asNewPane: sender.keyEquivalentModifierMask.contains(.shift)
+                || settings.opensNewTerminalsInSplit)
+    }
+
+    @objc private func showAboutPanel(_ sender: Any?) {
+        let applicationVersion = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationVersion: applicationVersion ?? "",
+            // The package uses the marketing version as CFBundleVersion too.
+            // Suppress that duplicate build value so AppKit renders only
+            // "Version 1.1.7", not "Version 1.1.7 (1.1.7)".
+            .version: "",
+        ])
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        if let settingsWindow {
+            settingsWindow.makeKeyAndOrderFront(nil)
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
+            return
+        }
+
+        let content = SettingsView()
+            .environmentObject(settings)
+        let hosting = NSHostingView(rootView: content)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 560),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false)
+        window.title = "Settings"
+        window.contentView = hosting
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        settingsWindow = window
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
     }
 
     /// Pin the sidebar toggle to the trailing edge of the window titlebar (next
@@ -120,10 +162,12 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         // its NSMenu tree manually. In particular, the standard ⌘Q shortcut only
         // exists when an item targeting NSApplication.terminate(_:) is present.
         let applicationMenu = NSMenu(title: "mTerm")
-        applicationMenu.addItem(
-            NSMenuItem(title: "About mTerm",
-                       action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-                       keyEquivalent: ""))
+        let aboutItem = NSMenuItem(
+            title: "About mTerm",
+            action: #selector(showAboutPanel(_:)),
+            keyEquivalent: "")
+        aboutItem.target = self
+        applicationMenu.addItem(aboutItem)
         let checkForUpdatesItem = NSMenuItem(
             title: "Check for Updates…",
             action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
@@ -133,6 +177,16 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
             accessibilityDescription: "Check for Updates")
         checkForUpdatesItem.target = updaterController
         applicationMenu.addItem(checkForUpdatesItem)
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showSettings(_:)),
+            keyEquivalent: ",")
+        settingsItem.image = NSImage(
+            systemSymbolName: "gearshape",
+            accessibilityDescription: "Settings")
+        settingsItem.keyEquivalentModifierMask = .command
+        settingsItem.target = self
+        applicationMenu.addItem(settingsItem)
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(menuItem("Hide mTerm", #selector(NSApplication.hide(_:)), "h"))
 

@@ -4,18 +4,49 @@ import UniformTypeIdentifiers
 
 struct WorkspaceView: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         HStack(spacing: 0) {
             if workspace.isSidebarVisible {
                 WorkspaceSidebar()
-                Rectangle()
-                    .fill(MTermTheme.sidebarBorder)
-                    .frame(width: 1)
+                    .frame(width: CGFloat(settings.sidebarWidth))
+                SidebarResizeHandle()
             }
             TerminalDeck()
         }
         .background(MTermTheme.deck)
+    }
+}
+
+private struct SidebarResizeHandle: View {
+    @EnvironmentObject private var settings: AppSettings
+    @State private var dragStartWidth: Double?
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            Rectangle()
+                .fill(MTermTheme.sidebarBorder)
+                .frame(width: 1)
+        }
+        .frame(width: 7)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            (inside ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
+        }
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let start = dragStartWidth ?? settings.sidebarWidth
+                    dragStartWidth = start
+                    settings.sidebarWidth = start + Double(value.translation.width)
+                }
+                .onEnded { _ in
+                    dragStartWidth = nil
+                }
+        )
+        .help("Drag to resize sidebar")
     }
 }
 
@@ -44,6 +75,7 @@ struct SidebarToggleButton: View {
 
 private struct WorkspaceSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
     @State private var collapsedFolders: Set<WorkspaceFolder.ID> = []
     @State private var folderDropTarget: FolderDropTarget?
     @State private var sessionDropTarget: SessionDropTarget?
@@ -53,7 +85,9 @@ private struct WorkspaceSidebar: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     sidebarAction("New terminal", icon: "plus") {
-                        workspace.createSession(asNewPane: NSEvent.modifierFlags.contains(.command))
+                        workspace.createSession(asNewPane:
+                            settings.opensNewTerminalsInSplit
+                                || NSEvent.modifierFlags.contains(.command))
                     }
                     sidebarSection("OPEN SESSIONS") {
                         ForEach(workspace.sessions.filter { $0.workspaceID == nil }) { session in
@@ -96,7 +130,6 @@ private struct WorkspaceSidebar: View {
                 .padding(.bottom, 14)
             }
         }
-        .frame(width: 250)
         .background(MTermTheme.sidebar)
     }
 
@@ -117,7 +150,9 @@ private struct WorkspaceSidebar: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 0) {
                 Text(title)
-                    .font(.caption2.weight(.bold))
+                    .font(.system(
+                        size: CGFloat(max(9, settings.sidebarFontSize - 2)),
+                        weight: .bold))
                     .tracking(1)
                     .foregroundStyle(MTermTheme.dim2)
                 Spacer()
@@ -134,10 +169,14 @@ private struct WorkspaceSidebar: View {
         Button(action: action, label: {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(
+                        size: CGFloat(settings.sidebarFontSize),
+                        weight: .semibold))
                     .foregroundStyle(MTermTheme.accent)
                 Text(title)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(
+                        size: CGFloat(settings.sidebarFontSize),
+                        weight: .bold))
                     .foregroundStyle(MTermTheme.text)
             }
             .frame(maxWidth: .infinity)
@@ -163,6 +202,7 @@ struct FolderDropTarget: Equatable {
 
 private struct WorkspaceFolderRow: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
     let folder: WorkspaceFolder
     var hasChildren = false
     var isExpanded = true
@@ -171,29 +211,40 @@ private struct WorkspaceFolderRow: View {
     @Binding var dropTarget: FolderDropTarget?
     @State private var rowHeight: CGFloat = 34
     @State private var isHovering = false
+    @State private var isRenaming = false
+    @State private var nameDraft = ""
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: hasChildren ? "chevron.right" : "folder")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(
+                    size: CGFloat(max(9, settings.sidebarFontSize - 2)),
+                    weight: .semibold))
                 .foregroundStyle(MTermTheme.dim2)
                 .rotationEffect(.degrees(hasChildren && isExpanded ? 90 : 0))
                 .frame(width: 12)
             Text(folder.name)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(
+                    size: CGFloat(settings.sidebarFontSize),
+                    weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)
             Spacer(minLength: 6)
             if count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .font(.system(
+                        size: CGFloat(max(9, settings.sidebarFontSize - 2.5)),
+                        weight: .semibold,
+                        design: .monospaced))
                     .foregroundStyle(MTermTheme.accent)
                     .frame(minWidth: 18, minHeight: 18)
                     .padding(.horizontal, 4)
                     .background(Circle().fill(MTermTheme.accent.opacity(0.16)))
             }
             Button {
-                workspace.createSession(in: folder, asNewPane: NSEvent.modifierFlags.contains(.command))
+                workspace.createSession(in: folder, asNewPane:
+                    settings.opensNewTerminalsInSplit
+                        || NSEvent.modifierFlags.contains(.command))
             } label: {
                 Image(systemName: "plus")
                     .font(.caption.weight(.semibold))
@@ -227,6 +278,41 @@ private struct WorkspaceFolderRow: View {
             rowHeight: rowHeight,
             dropTarget: $dropTarget,
             workspace: workspace))
+        .contextMenu {
+            Button("New Terminal Here") {
+                workspace.createSession(
+                    in: folder,
+                    asNewPane: settings.opensNewTerminalsInSplit)
+            }
+            Button("New Terminal Here in Split") {
+                workspace.createSession(in: folder, asNewPane: true)
+            }
+            Divider()
+            Button("Rename Display Name…") {
+                nameDraft = folder.name
+                isRenaming = true
+            }
+            Button("Open in Finder") {
+                NSWorkspace.shared.open(URL(fileURLWithPath: folder.path))
+            }
+            Button("Copy Path") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(folder.path, forType: .string)
+            }
+            Divider()
+            Button("Remove Workspace", role: .destructive) {
+                workspace.removeWorkspace(folder.id)
+            }
+        }
+        .alert("Rename Workspace", isPresented: $isRenaming) {
+            TextField("Workspace name", text: $nameDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                workspace.renameWorkspace(folder.id, to: nameDraft)
+            }
+        } message: {
+            Text("Only the name shown in mTerm changes. The folder on disk is not renamed.")
+        }
     }
 
     private func isTarget(after: Bool) -> Bool {
@@ -289,12 +375,17 @@ struct SessionDropTarget: Equatable {
 
 private struct SessionSidebarRow: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
     let session: SessionRecord
     var isNested = false
     @Binding var dropTarget: SessionDropTarget?
     @State private var rowHeight: CGFloat = 36
+    @State private var isRenaming = false
+    @State private var titleDraft = ""
+    @FocusState private var isTitleFieldFocused: Bool
 
     private var isSelected: Bool { session.id == workspace.selectedSessionID }
+    private var isVisibleInWorkview: Bool { workspace.grid.paneIDs.contains(session.id) }
     private var displayTitle: String { workspace.displayTitle(for: session) }
 
     var body: some View {
@@ -303,16 +394,32 @@ private struct SessionSidebarRow: View {
                               isClaude: workspace.claudeSessionIDs.contains(session.id),
                               isCodex: workspace.codexSessionIDs.contains(session.id))
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayTitle)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
-                    .lineLimit(1)
+                if isRenaming {
+                    TextField("Terminal title", text: $titleDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(
+                            size: CGFloat(settings.sidebarFontSize),
+                            weight: .semibold))
+                        .foregroundStyle(MTermTheme.text)
+                        .focused($isTitleFieldFocused)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { cancelRename() }
+                } else {
+                    Text(displayTitle)
+                        .font(.system(
+                            size: CGFloat(settings.sidebarFontSize),
+                            weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
+                        .lineLimit(1)
+                }
                 // Sessions nested under a workspace folder omit the directory
                 // subtitle in the sidebar (the folder already names it); loose
                 // "open sessions" still show it.
                 if !isNested {
                     Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(
+                            size: CGFloat(max(9, settings.sidebarFontSize - 2)),
+                            design: .monospaced))
                         .foregroundStyle(MTermTheme.dim2)
                         .lineLimit(1)
                 }
@@ -348,8 +455,16 @@ private struct SessionSidebarRow: View {
         .padding(.leading, isNested ? 12 : 0)
         .opacity(workspace.draggedSessionID == session.id ? 0.4 : 1)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            beginRenaming()
+        }
         .onTapGesture {
-            workspace.openInActivePane(session.id)
+            guard !isRenaming else { return }
+            if NSEvent.modifierFlags.contains(.command) {
+                workspace.openInNewPane(session.id)
+            } else {
+                workspace.openInActivePane(session.id)
+            }
         }
         .onDrag {
             workspace.beginDragging(session.id)
@@ -361,8 +476,57 @@ private struct SessionSidebarRow: View {
             dropTarget: $dropTarget,
             workspace: workspace))
         .contextMenu {
-            Button("Close") { workspace.close(session) }
+            Button("Open in Active Pane") {
+                workspace.openInActivePane(session.id)
+            }
+            .disabled(isVisibleInWorkview)
+            Button("Open in New Split") {
+                workspace.openInNewPane(session.id)
+            }
+            .disabled(isVisibleInWorkview)
+            Button("New Terminal Here in Split") {
+                workspace.createSessionInSameDirectory(as: session.id)
+            }
+            Divider()
+            Button("Rename…") {
+                beginRenaming()
+            }
+            Button("Open Working Directory in Finder") {
+                NSWorkspace.shared.open(URL(fileURLWithPath: session.workingDirectory))
+            }
+            Button("Copy Working Directory") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(session.workingDirectory, forType: .string)
+            }
+            Divider()
+            Button("Close Terminal", role: .destructive) {
+                workspace.close(session)
+            }
         }
+        .onChange(of: isTitleFieldFocused) { _, focused in
+            if !focused, isRenaming {
+                commitRename()
+            }
+        }
+    }
+
+    private func beginRenaming() {
+        titleDraft = displayTitle
+        isRenaming = true
+        DispatchQueue.main.async {
+            isTitleFieldFocused = true
+        }
+    }
+
+    private func commitRename() {
+        guard isRenaming else { return }
+        workspace.renameSession(session.id, to: titleDraft)
+        isRenaming = false
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+        titleDraft = displayTitle
     }
 
     private func isTarget(after: Bool) -> Bool {
@@ -426,18 +590,13 @@ private struct SessionReorderDropDelegate: DropDelegate {
 }
 
 /// The sidebar row's leading icon. Three distinct looks:
-/// - default: the small green running dot (dimmed once the session has exited);
+/// - default terminal: a graphite squircle with a green `>` and white underscore;
 /// - Claude running: the orange squircle app-mark with a white Claude sunburst;
 /// - Codex running: the white squircle app-mark with the black OpenAI knot.
 private struct SessionStatusIcon: View {
     let status: SessionRecord.Status
     let isClaude: Bool
     let isCodex: Bool
-    var runningColor = MTermTheme.accent
-    var exitedColor = MTermTheme.dim2
-    var dotSize: CGFloat = 7
-    var glowRadius: CGFloat = 3
-    var showsRunningGlow = true
 
     var body: some View {
         ZStack {
@@ -456,17 +615,46 @@ private struct SessionStatusIcon: View {
                     .fill(MTermTheme.codexMark, style: FillStyle(eoFill: true))
                     .frame(width: 11, height: 11)
             } else {
-                Circle()
-                    .fill(status == .running ? runningColor : exitedColor)
-                    .frame(width: dotSize, height: dotSize)
-                    .shadow(
-                        color: status == .running && showsRunningGlow
-                            ? runningColor.opacity(0.7)
-                            : .clear,
-                        radius: glowRadius)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(MTermTheme.terminalIconBackground)
+                        .frame(width: 17, height: 17)
+                    TerminalPromptLogo()
+                        .frame(width: 12, height: 12)
+                }
+                .opacity(status == .running ? 1 : 0.42)
             }
         }
         .frame(width: 18, height: 18)
+    }
+}
+
+/// The familiar Terminal app prompt motif, redrawn in a 24×24 viewBox so it
+/// stays crisp at the compact 17-point size used by sidebar rows and pane headers.
+private struct TerminalPromptLogo: View {
+    var body: some View {
+        ZStack {
+            TerminalChevronLogo()
+                .fill(MTermTheme.terminalIconChevron)
+            TerminalUnderscoreLogo()
+                .fill(MTermTheme.terminalIconUnderscore)
+        }
+    }
+}
+
+struct TerminalChevronLogo: Shape {
+    static let pathData = "M4 4 L7.5 4 L12.5 12 L7.5 20 L4 20 L9 12 Z"
+
+    func path(in rect: CGRect) -> Path {
+        absoluteSVGPath(Self.pathData, in: rect)
+    }
+}
+
+struct TerminalUnderscoreLogo: Shape {
+    static let pathData = "M12 17 L21 17 L21 20 L12 20 Z"
+
+    func path(in rect: CGRect) -> Path {
+        absoluteSVGPath(Self.pathData, in: rect)
     }
 }
 
@@ -539,6 +727,7 @@ private func absoluteSVGPath(_ pathData: String, in rect: CGRect) -> Path {
 
 private struct TerminalDeck: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
 
     /// Breathing room between panes (and around the deck edge). Panes are inset
     /// by half of this on every side so adjacent panes are separated by a full
@@ -585,7 +774,7 @@ private struct TerminalDeck: View {
                 .font(.headline)
                 .foregroundStyle(MTermTheme.dim)
             Button {
-                workspace.createSession()
+                workspace.createSession(asNewPane: settings.opensNewTerminalsInSplit)
             } label: {
                 Label("New terminal", systemImage: "plus")
                     .font(.system(size: 13, weight: .bold))
@@ -718,6 +907,7 @@ private struct ResizeHandle: View {
 
 private struct TerminalPane: View {
     @EnvironmentObject private var workspace: WorkspaceStore
+    @EnvironmentObject private var settings: AppSettings
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
@@ -735,6 +925,9 @@ private struct TerminalPane: View {
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
                                  fileDropRequest: fileDropRequest,
+                                 fontName: settings.terminalFontName,
+                                 fontSize: settings.terminalFontSize,
+                                 ansiColors: settings.ansiColors,
                                  onForeground: {
                                      workspace.setForeground(session.id, command: $0)
                                  },
@@ -810,12 +1003,7 @@ private struct TerminalPane: View {
             SessionStatusIcon(
                 status: session.status,
                 isClaude: workspace.claudeSessionIDs.contains(session.id),
-                isCodex: workspace.codexSessionIDs.contains(session.id),
-                runningColor: dotColor,
-                exitedColor: MTermTheme.danger,
-                dotSize: 8,
-                glowRadius: 4,
-                showsRunningGlow: isFocused)
+                isCodex: workspace.codexSessionIDs.contains(session.id))
             Text(workspace.displayTitle(for: session))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
@@ -855,11 +1043,6 @@ private struct TerminalPane: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(MTermTheme.border).frame(height: 1)
         }
-    }
-
-    private var dotColor: Color {
-        if session.status != .running { return MTermTheme.danger }
-        return isFocused ? MTermTheme.accent : MTermTheme.dim
     }
 
     private var isFocused: Bool {

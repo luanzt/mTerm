@@ -32,7 +32,7 @@ struct SessionRecord: Codable, Hashable, Identifiable {
 
 struct WorkspaceFolder: Codable, Hashable, Identifiable {
     let id: UUID
-    let name: String
+    var name: String
     let path: String
 
     init(path: String) {

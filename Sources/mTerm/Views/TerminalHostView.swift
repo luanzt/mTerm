@@ -7,6 +7,9 @@ struct TerminalHostView: NSViewRepresentable {
     let isVisible: Bool
     let isFocused: Bool
     let fileDropRequest: TerminalFileDropRequest?
+    let fontName: String
+    let fontSize: Double
+    let ansiColors: [UInt32]
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
@@ -29,6 +32,13 @@ struct TerminalHostView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
         let terminal = LocalProcessTerminalView(frame: .zero)
+        // SwiftTerm installs a standalone NSScroller along the trailing edge.
+        // mTerm keeps scrollback available through the terminal's own
+        // wheel/trackpad handling, but hides the persistent gray indicator so
+        // the pane body stays visually clean.
+        terminal.subviews
+            .compactMap { $0 as? NSScroller }
+            .forEach { $0.isHidden = true }
         terminal.font = terminalFont
         terminal.caretColor = NSColor(hex: MTermTheme.terminalCaret)
         terminal.wantsLayer = true
@@ -40,16 +50,33 @@ struct TerminalHostView: NSViewRepresentable {
         // output isn't washed-out gray. (Colors live in MTermTheme.)
         terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
         terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
-        terminal.installColors(MTermTheme.ansiPalette.map { SwiftTerm.Color(hex: $0) })
+        terminal.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
         // Give OSC 8 labels the same lavender used by Claude's other links.
         // Command-hover reveals the link with a stronger blue + underline.
         terminal.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
         terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
+        context.coordinator.appliedFontName = fontName
+        context.coordinator.appliedFontSize = fontSize
+        context.coordinator.appliedANSIColors = ansiColors
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         terminal.processDelegate = context.coordinator
+        context.coordinator.keyDownMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown
+        ) { [weak terminal] event in
+            guard let terminal,
+                  terminal.window?.firstResponder === terminal,
+                  let input = TerminalKeyboardInput.shiftEnter(
+                    keyCode: event.keyCode,
+                    modifierFlags: event.modifierFlags
+                  ) else {
+                return event
+            }
+            terminal.send(input)
+            return nil
+        }
 
         // Listen for the shell-integration marker (OSC 633). SwiftTerm checks
         // registered handlers before its built-in OSC switch, so this needs no
@@ -126,16 +153,26 @@ struct TerminalHostView: NSViewRepresentable {
     }
 
     private var terminalFont: NSFont {
-        ["MesloLGS NF", "MesloLGS NF Regular", "MesloLGSNF-Regular"]
-            .lazy
-            .compactMap { NSFont(name: $0, size: 14) }
-            .first ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+        NSFont(name: fontName, size: CGFloat(fontSize))
+            ?? NSFont.monospacedSystemFont(
+                ofSize: CGFloat(fontSize),
+                weight: .regular)
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
         nsView.isHidden = !isVisible
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
+        if context.coordinator.appliedFontName != fontName
+            || context.coordinator.appliedFontSize != fontSize {
+            nsView.font = terminalFont
+            context.coordinator.appliedFontName = fontName
+            context.coordinator.appliedFontSize = fontSize
+        }
+        if context.coordinator.appliedANSIColors != ansiColors {
+            nsView.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
+            context.coordinator.appliedANSIColors = ansiColors
+        }
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
@@ -170,6 +207,10 @@ struct TerminalHostView: NSViewRepresentable {
             NotificationCenter.default.removeObserver(observer)
             coordinator.frameObserver = nil
         }
+        if let monitor = coordinator.keyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            coordinator.keyDownMonitor = nil
+        }
         if coordinator.didStartProcess {
             nsView.terminate()
         }
@@ -181,9 +222,13 @@ struct TerminalHostView: NSViewRepresentable {
         var terminal: LocalProcessTerminalView?
         var didStartProcess = false
         var frameObserver: NSObjectProtocol?
+        var keyDownMonitor: Any?
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var lastFileDropID: UUID?
         var foregroundCommand: String?
+        var appliedFontName: String?
+        var appliedFontSize: Double?
+        var appliedANSIColors: [UInt32]?
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         private var pendingTitleUpdate: DispatchWorkItem?
@@ -241,6 +286,24 @@ struct TerminalHostView: NSViewRepresentable {
             pendingTitleUpdate?.cancel()
             pendingTitleUpdate = nil
         }
+    }
+}
+
+enum TerminalKeyboardInput {
+    private static let returnKeyCodes: Set<UInt16> = [36, 76]
+
+    /// LF is the terminal input produced by Ctrl+J. Agent TUIs use it to insert
+    /// a newline without submitting, while an ordinary Return remains CR.
+    static func shiftEnter(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> [UInt8]? {
+        guard returnKeyCodes.contains(keyCode),
+              modifierFlags.contains(.shift),
+              modifierFlags.intersection([.command, .control, .option]).isEmpty else {
+            return nil
+        }
+        return [0x0A]
     }
 }
 

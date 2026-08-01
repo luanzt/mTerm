@@ -32,7 +32,10 @@ mTerm is a macOS terminal-multiplexer app: a SwiftPM **executable** (not a Swift
 
 The manual menu currently owns these app-wide commands:
 
+- mTerm ▸ About mTerm — opens AppKit's standard About panel with only the
+  marketing version; the duplicate build-version suffix is intentionally hidden.
 - mTerm ▸ Check for Updates… — Sparkle's standard updater UI.
+- mTerm ▸ Settings… — ⌘, opens the retained typography/ANSI settings window.
 - File ▸ New Terminal — ⌘N creates an ungrouped OPEN SESSIONS terminal in the
   focused pane; ⇧⌘N opens it as another pane, or replaces the focused pane when
   all six slots are occupied.
@@ -55,7 +58,36 @@ All mutations (create/close/hide/place/maximize/resize) go through it. Only
 `workspaces` is persisted (UserDefaults); sessions are intentionally not.
 `savedGrid` backs maximize↔restore and is cleared by any structural grid change.
 Keyboard creation commands explicitly target `selectedSessionID`; sidebar
-actions remain hover-aware.
+actions remain hover-aware. A normal sidebar click replaces the hover-aware
+active pane; Command-click adds a hidden session as a split, or focuses it if it
+is already visible, retaining the normal six-pane fallback when the grid is full.
+`renameSession` is the only user-title mutation path. A manually renamed stable
+title is shared by the sidebar, pane header, and notification subtitle, and takes
+precedence over later transient Claude/Codex OSC titles for that session.
+Workspace folder rows expose creation in the active pane or a split, Finder and
+path actions, and a display-name-only rename. Removing a workspace never deletes
+the folder or ends a process: its live sessions are detached into Open Sessions.
+Session rows expose active-pane/split opening, a fresh terminal in the same live
+directory, Finder/path actions, rename, and close. Double-clicking a session row
+renames it inline; Return or focus loss commits, while Escape cancels.
+The two open actions are disabled while that session is already visible because
+the pane-grid invariant forbids showing the same terminal view more than once.
+
+### Appearance settings: `AppSettings` (Store/AppSettings.swift)
+
+`AppSettings` is the persistent `@MainActor ObservableObject` for terminal font
+family, terminal content size, sidebar text size and width, the 16-color ANSI
+palette, and the
+default new-terminal placement. The placement defaults to the current pane;
+normal creation actions honor it, while explicitly split-labelled actions and
+⇧⌘N/⇧⌘T always request a split. The app delegate owns one instance and injects
+it into both `WorkspaceView` and the
+retained Settings window. Values are validated when loaded from UserDefaults;
+the defaults remain the Meslo/system-monospace 14 pt terminal, 13 pt sidebar,
+and `MTermTheme.ansiPalette`. Font and palette updates must be applied to the
+existing SwiftTerm views rather than recreating them or their shell processes.
+The sidebar width defaults to 250 pt, is clamped to 180–420 pt, persists, and can
+be changed either in Settings or by dragging its trailing divider without animation.
 
 ### Layout model: `PaneGrid` (Models/PaneGrid.swift)
 
@@ -97,9 +129,17 @@ started from a **frame-change observer** (not `updateNSView`) the first time the
 view has a real non-zero frame, so the PTY's initial winsize matches the pane and
 prompts don't reprint on startup. `TerminalDeck.paneFrames` has a stderr tripwire
 that logs `MTERM_GRID_ANOMALY` if a pane is ever duplicated/orphaned/missing a frame.
+The bridge's focused-terminal key monitor maps Shift-Return and
+Shift-keypad-Enter to LF (the same terminal input as Ctrl-J), so agent TUIs
+insert a newline while plain Return keeps its normal CR/submit behavior.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.
+`TerminalHostView.updateNSView` also applies changed font and ANSI settings to
+that same persistent view. It caches the last applied values in its coordinator
+so unrelated SwiftUI updates do not repeatedly reset fonts, palettes, or PTY size.
+The standalone SwiftTerm `NSScroller` is hidden to remove the trailing gray bar;
+scrollback remains enabled through SwiftTerm's direct wheel/trackpad handling.
 
 `ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
 with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
@@ -169,8 +209,10 @@ Codex-supplied message is validated but deliberately not copied into
 Notification Center: it may contain assistant text, a command, or a file path.
 The native alert uses a privacy-safe generic summary and still routes back to
 the exact pane when clicked. The same foreground-command state swaps both the
-sidebar and pane-header running dots for the white OpenAI app mark while Codex
-is active. Claude uses its terracotta app mark in those same two locations.
+sidebar and pane-header terminal prompt marks for the white OpenAI app mark while
+Codex is active. Claude uses its terracotta app mark in those same two locations.
+Ordinary terminal sessions use a graphite app tile with a green `>` and white
+underscore instead of a status dot; exited sessions dim that prompt motif.
 
 #### Agent conversation titles
 
@@ -203,7 +245,8 @@ not return to the shell and therefore must not restore `Terminal N`.
 `Color(nsColor: .windowBackgroundColor)`-style system colors. Terminal
 foreground/cursor/link and ANSI 0–15 intentionally mirror the dark variants in
 iTerm2's `plists/DefaultBookmark.plist`; the terminal background remains mTerm's
-deck color so the embedded view blends into the pane.
+deck color so the embedded view blends into the pane. Those ANSI values are the
+reset defaults; `AppSettings.ansiColors` is the live user-selected palette.
 
 ## Dependencies
 

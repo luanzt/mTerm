@@ -22,13 +22,16 @@ enum MTermTheme {
     static let dim2 = Color(hex: 0x565E6A)   // tertiary / paths, captions
 
     // Accents
-    static let accent = Color(hex: 0x34D399)  // emerald — focus, running dot
+    static let accent = Color(hex: 0x34D399)  // emerald — focus and selection
     static let path = Color(hex: 0x7DD3FC)    // cyan — working-dir paths
     static let prompt = Color(hex: 0x6EE7B7)  // shell prompt green
     static let danger = Color(hex: 0xF87171)  // close / exited
     static let claude = Color(hex: 0xD97757)  // Claude terracotta — running-claude icon bg
     static let codexBackground = Color(hex: 0xFFFFFF)  // Codex icon tile
     static let codexMark = Color(hex: 0x000000)        // OpenAI knot
+    static let terminalIconBackground = Color(hex: 0x2A3038)
+    static let terminalIconChevron = Color(hex: 0x32D74B)
+    static let terminalIconUnderscore = Color(hex: 0xFFFFFF)
 
     // Effects
     static let glow = Color(hex: 0x34D399).opacity(0.14)   // focused pane halo

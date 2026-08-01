@@ -2,12 +2,14 @@ import XCTest
 @testable import mTerm
 
 final class ThemeTests: XCTestCase {
-    func testAgentLogoPathsRenderInsideTheirFrames() {
+    func testStatusLogoPathsRenderInsideTheirFrames() {
         let frame = CGRect(x: 10, y: 20, width: 48, height: 24)
 
         for path in [
             ClaudeLogo().path(in: frame),
             OpenAILogo().path(in: frame),
+            TerminalChevronLogo().path(in: frame),
+            TerminalUnderscoreLogo().path(in: frame),
         ] {
             let bounds = path.boundingRect
             XCTAssertFalse(bounds.isEmpty)

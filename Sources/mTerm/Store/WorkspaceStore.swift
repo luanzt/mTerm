@@ -29,6 +29,9 @@ final class WorkspaceStore: ObservableObject {
     /// separately so each session's stable "Terminal N" title is restored when
     /// shell integration reports that the pane is idle again.
     @Published private(set) var agentSessionTitles: [SessionRecord.ID: String] = [:]
+    /// User-renamed sessions always display their stable title instead of an
+    /// agent-supplied transient OSC title.
+    private var manuallyRenamedSessionIDs: Set<SessionRecord.ID> = []
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
@@ -157,6 +160,28 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
+    /// Changes only the label shown in mTerm. The folder's path and name on
+    /// disk remain untouched.
+    func renameWorkspace(_ id: WorkspaceFolder.ID, to rawName: String) {
+        guard let normalized = Self.normalizedUserLabel(rawName),
+              let index = workspaces.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        workspaces[index].name = normalized
+        persist()
+    }
+
+    /// Removes a folder grouping without deleting anything on disk or ending
+    /// its shell processes. Existing sessions become ungrouped Open Sessions.
+    func removeWorkspace(_ id: WorkspaceFolder.ID) {
+        guard workspaces.contains(where: { $0.id == id }) else { return }
+        workspaces.removeAll { $0.id == id }
+        for index in sessions.indices where sessions[index].workspaceID == id {
+            sessions[index].workspaceID = nil
+        }
+        persist()
+    }
+
     func chooseWorkspace() {
         let panel = NSOpenPanel()
         panel.title = "Open Workspace"
@@ -178,12 +203,24 @@ final class WorkspaceStore: ObservableObject {
         addSession(session, asNewPane: asNewPane, replacingPane: activePaneSessionID)
     }
 
+    /// Creates a fresh shell beside an existing terminal, inheriting its live
+    /// working directory and workspace grouping without duplicating the process.
+    func createSessionInSameDirectory(as sourceID: SessionRecord.ID) {
+        guard let source = session(for: sourceID) else { return }
+        let session = makeSession(
+            workingDirectory: source.workingDirectory,
+            workspaceID: source.workspaceID)
+        let target = grid.paneIDs.contains(sourceID) ? sourceID : activePaneSessionID
+        addSession(session, asNewPane: true, replacingPane: target)
+    }
+
     func close(_ session: SessionRecord) {
         guard let index = sessions.firstIndex(of: session) else { return }
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
         codexSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
+        manuallyRenamedSessionIDs.remove(session.id)
         cancelCodexTitleResolution(for: session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
@@ -277,7 +314,8 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
-        guard session(for: id) != nil else { return }
+        guard session(for: id) != nil,
+              !manuallyRenamedSessionIDs.contains(id) else { return }
 
         if codexSessionIDs.contains(id),
            let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
@@ -299,7 +337,38 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func displayTitle(for session: SessionRecord) -> String {
-        agentSessionTitles[session.id] ?? session.title
+        if manuallyRenamedSessionIDs.contains(session.id) {
+            return session.title
+        }
+        return agentSessionTitles[session.id] ?? session.title
+    }
+
+    /// Rename the stable session title shared by the sidebar, pane header, and
+    /// native notification subtitle. A user title takes precedence over future
+    /// transient Claude/Codex terminal-title updates for this session.
+    func renameSession(_ id: SessionRecord.ID, to rawTitle: String) {
+        guard let normalized = Self.normalizedUserLabel(rawTitle),
+              let index = sessions.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        sessions[index].title = normalized
+        manuallyRenamedSessionIDs.insert(id)
+        agentSessionTitles.removeValue(forKey: id)
+        cancelCodexTitleResolution(for: id)
+    }
+
+    private static func normalizedUserLabel(_ rawValue: String) -> String? {
+        guard !rawValue.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+        }) else {
+            return nil
+        }
+        let normalized = rawValue
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        guard !normalized.isEmpty else { return nil }
+        return String(normalized.prefix(80))
     }
 
     /// Updates the live shell directory reported through OSC 7. Terminal
@@ -531,6 +600,13 @@ final class WorkspaceStore: ObservableObject {
     /// current multi-pane layout.
     func openInActivePane(_ id: SessionRecord.ID) {
         showInActivePane(id)
+    }
+
+    /// Sidebar Command-click: add a hidden session as another pane, or only
+    /// focus it when it is already visible. `showInNewPane` retains the existing
+    /// six-pane fallback and placement rules used by keyboard-created splits.
+    func openInNewPane(_ id: SessionRecord.ID) {
+        showInNewPane(id)
     }
 
     func allowedZones(forPaneWith id: SessionRecord.ID) -> Set<DropZone> {
