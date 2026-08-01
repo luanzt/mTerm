@@ -121,6 +121,10 @@ constraints learned the hard way:
   intermediate size, so an animated width change becomes a SIGWINCH storm that
   makes the shell reprint its prompt repeatedly. Do not add `.animation` around
   pane frames.
+- Keep `TerminalPane` explicitly constrained to the `GeometryReader` size and
+  keep its conversation title compressible/truncated. Agent titles can be much
+  wider than a split pane; allowing either the title or SwiftTerm's intrinsic
+  width to win makes the next pane appear to overlap the existing one.
 
 ### Terminal bridge: `TerminalHostView.swift`
 
@@ -213,6 +217,13 @@ sidebar and pane-header terminal prompt marks for the white OpenAI app mark whil
 Codex is active. Claude uses its terracotta app mark in those same two locations.
 Ordinary terminal sessions use a graphite app tile with a green `>` and white
 underscore instead of a status dot; exited sessions dim that prompt motif.
+
+The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
+a submitted response. A plain Return in the agent pane starts the working state;
+the agent's trusted attention/completion event, returning to the shell, or closing
+the session clears it. Shift-Return and other modified Returns do not start the
+spinner because they edit or navigate the agent input rather than submit it. Keep
+this indicator out of pane headers and terminal content.
 
 #### Agent conversation titles
 

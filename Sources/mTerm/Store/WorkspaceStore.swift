@@ -25,6 +25,10 @@ final class WorkspaceStore: ObservableObject {
     /// icon in the sidebar and pane header, requests notification permission in
     /// context, and clears on close.
     @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
+    /// Agent sessions currently processing a submitted response. Attention events
+    /// clear this state when Claude/Codex finishes or needs the user again. This
+    /// drives only the sidebar spinner; pane headers remain visually unchanged.
+    @Published private(set) var agentWorkingSessionIDs: Set<SessionRecord.ID> = []
     /// Validated OSC 0/2 titles emitted by active Claude/Codex processes. Kept
     /// separately so each session's stable "Terminal N" title is restored when
     /// shell integration reports that the pane is idle again.
@@ -219,6 +223,7 @@ final class WorkspaceStore: ObservableObject {
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
         codexSessionIDs.remove(session.id)
+        agentWorkingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
         cancelCodexTitleResolution(for: session.id)
@@ -311,6 +316,18 @@ final class WorkspaceStore: ObservableObject {
         } else if !isCodex, codexSessionIDs.contains(id) {
             codexSessionIDs.remove(id)
         }
+
+        // Starting an interactive agent does not imply it already has a prompt
+        // to process. Submission is reported separately from TerminalHostView.
+        agentWorkingSessionIDs.remove(id)
+    }
+
+    /// A plain Return submitted inside an active agent TUI starts (or resumes)
+    /// work. Shift-Return is an editor newline and is deliberately excluded by
+    /// TerminalKeyboardInput before this method is called.
+    func reportAgentInputSubmitted(_ id: SessionRecord.ID) {
+        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) else { return }
+        agentWorkingSessionIDs.insert(id)
     }
 
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
@@ -470,11 +487,13 @@ final class WorkspaceStore: ObservableObject {
         kind: ClaudeIntegration.AttentionKind
     ) {
         guard let session = session(for: id) else { return }
+        agentWorkingSessionIDs.remove(id)
         onClaudeAttention?(session, kind)
     }
 
     func reportCodexAttention(_ id: SessionRecord.ID) {
         guard let session = session(for: id) else { return }
+        agentWorkingSessionIDs.remove(id)
         onCodexAttention?(session)
     }
 

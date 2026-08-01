@@ -425,6 +425,14 @@ private struct SessionSidebarRow: View {
                 }
             }
             Spacer()
+            if workspace.agentWorkingSessionIDs.contains(session.id) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(MTermTheme.accent)
+                    .frame(width: 16, height: 16)
+                    .accessibilityLabel("Agent is working")
+            }
             Button {
                 workspace.close(session)
             } label: {
@@ -942,10 +950,17 @@ private struct TerminalPane: View {
                                  },
                                  onCodexAttention: {
                                      workspace.reportCodexAttention(session.id)
+                                 },
+                                 onAgentInputSubmitted: {
+                                     workspace.reportAgentInputSubmitted(session.id)
                                  })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
             }
+            // Header titles and AppKit-backed terminal views may both advertise
+            // a wide intrinsic size. Keep the pane locked to the non-animated
+            // rect assigned by TerminalDeck so a new split cannot overlap it.
+            .frame(width: proxy.size.width, height: proxy.size.height)
             .background(MTermTheme.terminal)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
@@ -1008,7 +1023,8 @@ private struct TerminalPane: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)
-                .fixedSize()
+                .truncationMode(.tail)
+                .layoutPriority(1)
             Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundStyle(MTermTheme.dim2)

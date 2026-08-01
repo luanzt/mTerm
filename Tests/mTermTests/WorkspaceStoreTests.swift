@@ -609,6 +609,43 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.codexSessionIDs.contains(id))
     }
 
+    func testAgentWorkingStateFollowsSubmissionAndAttention() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.reportAgentInputSubmitted(session.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.setForeground(session.id, command: "claude")
+        store.reportAgentInputSubmitted(session.id)
+        XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.reportClaudeAttention(session.id, kind: .idlePrompt)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.setForeground(session.id, command: "codex")
+        store.reportAgentInputSubmitted(session.id)
+        XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.reportCodexAttention(session.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+    }
+
+    func testAgentWorkingStateClearsWhenAgentExitsOrSessionCloses() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "codex")
+        store.reportAgentInputSubmitted(session.id)
+        store.setForeground(session.id, command: nil)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.setForeground(session.id, command: "claude")
+        store.reportAgentInputSubmitted(session.id)
+        store.close(session)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+    }
+
     func testAgentTitleTemporarilyOverridesStableSessionTitle() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]

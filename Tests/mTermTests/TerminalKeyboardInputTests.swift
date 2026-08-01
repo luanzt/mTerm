@@ -55,4 +55,32 @@ final class TerminalKeyboardInputTests: XCTestCase {
             )
         )
     }
+
+    func testPlainReturnSubmitsActiveAgentInput() {
+        for command in ["claude", "codex"] {
+            XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+                keyCode: 36,
+                modifierFlags: [],
+                foregroundCommand: command))
+        }
+        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 76,
+            modifierFlags: .numericPad,
+            foregroundCommand: "codex"))
+    }
+
+    func testReturnDoesNotSubmitOutsideAgentOrWithEditingModifiers() {
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "git"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: .shift,
+            foregroundCommand: "claude"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 0,
+            modifierFlags: [],
+            foregroundCommand: "codex"))
+    }
 }

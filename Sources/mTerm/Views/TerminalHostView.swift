@@ -25,6 +25,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports Codex's built-in OSC 9 notification only while Codex is the
     /// foreground process in this pane.
     var onCodexAttention: () -> Void = {}
+    /// Reports a submitted response while Claude/Codex owns the terminal. This
+    /// is used only for the sidebar's transient working indicator.
+    var onAgentInputSubmitted: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -62,18 +65,26 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.appliedANSIColors = ansiColors
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
+        context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         terminal.processDelegate = context.coordinator
         context.coordinator.keyDownMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { [weak terminal] event in
             guard let terminal,
-                  terminal.window?.firstResponder === terminal,
-                  let input = TerminalKeyboardInput.shiftEnter(
-                    keyCode: event.keyCode,
-                    modifierFlags: event.modifierFlags
-                  ) else {
+                  terminal.window?.firstResponder === terminal else {
                 return event
             }
+            if TerminalKeyboardInput.isAgentSubmission(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags,
+                foregroundCommand: context.coordinator.foregroundCommand
+            ) {
+                context.coordinator.onAgentInputSubmitted()
+            }
+            guard let input = TerminalKeyboardInput.shiftEnter(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags
+            ) else { return event }
             terminal.send(input)
             return nil
         }
@@ -163,6 +174,7 @@ struct TerminalHostView: NSViewRepresentable {
         nsView.isHidden = !isVisible
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
+        context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         if context.coordinator.appliedFontName != fontName
             || context.coordinator.appliedFontSize != fontSize {
             nsView.font = terminalFont
@@ -231,6 +243,7 @@ struct TerminalHostView: NSViewRepresentable {
         var appliedANSIColors: [UInt32]?
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
+        var onAgentInputSubmitted: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
@@ -304,6 +317,21 @@ enum TerminalKeyboardInput {
             return nil
         }
         return [0x0A]
+    }
+
+    /// A plain Return submits the current prompt/approval in Claude and Codex.
+    /// Modifier-assisted Returns are editor/navigation gestures and must not
+    /// make an idle agent look busy.
+    static func isAgentSubmission(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        foregroundCommand: String?
+    ) -> Bool {
+        guard foregroundCommand == "claude" || foregroundCommand == "codex",
+              returnKeyCodes.contains(keyCode) else { return false }
+        return modifierFlags
+            .intersection([.shift, .command, .control, .option])
+            .isEmpty
     }
 }
 
