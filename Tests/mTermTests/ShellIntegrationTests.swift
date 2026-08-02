@@ -106,6 +106,8 @@ final class ShellIntegrationTests: XCTestCase {
         XCTAssertTrue(zshrc.contains("source"))                 // re-sources user config
         XCTAssertTrue(zshrc.contains("add-zsh-hook preexec"))   // installs hooks
         XCTAssertTrue(zshrc.contains("\(ShellIntegration.oscCode);run;"))
+        XCTAssertTrue(zshrc.contains("${${2%% *}:t}")) // expanded alias command
+        XCTAssertFalse(zshrc.contains("${${1%% *}:t}"))
         XCTAssertTrue(zshrc.contains("MTERM_CLAUDE_SHIM_DIR"))
         XCTAssertTrue(zshrc.contains("MTERM_CODEX_SHIM_DIR"))
     }

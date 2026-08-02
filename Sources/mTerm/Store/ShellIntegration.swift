@@ -202,7 +202,10 @@ enum ShellIntegration {
     if [[ -n "$\(marker)" && -z "$_mterm_hooks_installed" ]]; then
       _mterm_hooks_installed=1
       autoload -Uz add-zsh-hook 2>/dev/null
-      _mterm_preexec() { printf '\\e]\(oscCode);run;%s\\a' "${${1%% *}:t}" }
+      # preexec's second argument is the command zsh will execute after alias
+      # expansion. Using the typed first argument would report aliases such as
+      # `cs` instead of `claude`, hiding agent icons and working indicators.
+      _mterm_preexec() { printf '\\e]\(oscCode);run;%s\\a' "${${2%% *}:t}" }
       _mterm_precmd()  { printf '\\e]\(oscCode);idle\\a' }
       add-zsh-hook preexec _mterm_preexec 2>/dev/null
       add-zsh-hook precmd  _mterm_precmd  2>/dev/null

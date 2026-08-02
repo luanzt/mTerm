@@ -197,6 +197,11 @@ not synonymous with "needs attention"), output regexes, process polling, or a
 quiet-time heuristic. Keep the OSC parser restricted to mTerm's marker and known
 enum values so arbitrary terminal programs cannot forge these alerts.
 
+Foreground-command markers use zsh `preexec`'s alias-expanded command argument,
+so aliases such as `cs='claude --model ...'` still activate Claude's pane icon,
+working indicator, title handling, and trusted attention routing. Do not switch
+this back to the command line exactly as typed.
+
 `swift run` executes an unbundled binary from `.build`, where
 `UNUserNotificationCenter.current()` raises an Objective-C exception because
 LaunchServices has no application bundle proxy. The notification coordinator
