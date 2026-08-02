@@ -13,6 +13,22 @@ enum AgentSessionTitle {
         "openai codex",
     ]
 
+    /// Claude prefixes its generic terminal title with the current spinner
+    /// frame (for example, `✳ Claude Code`). Treat every symbol-only prefix as
+    /// decoration so a paused frame cannot become the session's display title.
+    private static func isDecoratedGenericTitle(_ title: String) -> Bool {
+        let lowercased = title.lowercased()
+        if genericTitles.contains(lowercased) { return true }
+
+        return genericTitles.contains { genericTitle in
+            guard lowercased.hasSuffix(genericTitle) else { return false }
+            let prefix = lowercased.dropLast(genericTitle.count)
+            return !prefix.isEmpty && prefix.allSatisfy {
+                $0.isWhitespace || (!$0.isLetter && !$0.isNumber)
+            }
+        }
+    }
+
     static func normalize(_ rawTitle: String) -> String? {
         guard !rawTitle.unicodeScalars.contains(where: {
             CharacterSet.controlCharacters.contains($0)
@@ -25,7 +41,7 @@ enum AgentSessionTitle {
             .joined(separator: " ")
         guard !collapsed.isEmpty,
               CodexThreadTitleResolver.threadID(from: collapsed) == nil,
-              !genericTitles.contains(collapsed.lowercased()) else {
+              !isDecoratedGenericTitle(collapsed) else {
             return nil
         }
 

@@ -86,20 +86,24 @@ struct TerminalHostView: NSViewRepresentable {
                   terminal.window?.firstResponder === terminal else {
                 return event
             }
+            let foregroundCommand = context.coordinator.foregroundCommand
             if TerminalKeyboardInput.isAgentSubmission(
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags,
-                foregroundCommand: context.coordinator.foregroundCommand,
+                foregroundCommand: foregroundCommand,
                 isAgentInputMode: terminal.getTerminal().bracketedPasteMode,
+                isClaudeResponseExpected: context.coordinator.isClaudeResponseExpected,
                 agentActivationUptime: context.coordinator.agentActivationUptime,
                 eventUptime: event.timestamp
             ) {
+                context.coordinator.isClaudeResponseExpected = false
                 context.coordinator.onAgentInputSubmitted()
             } else if TerminalKeyboardInput.isAgentInterruption(
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags,
                 foregroundCommand: context.coordinator.foregroundCommand
             ) {
+                context.coordinator.isClaudeResponseExpected = false
                 context.coordinator.onAgentWorkInterrupted()
             }
             guard let input = TerminalKeyboardInput.shiftEnter(
@@ -117,6 +121,7 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.getTerminal().registerOscHandler(code: ShellIntegration.oscCode) { payload in
             switch ShellIntegration.parse(payload) {
             case .run(let command):
+                context.coordinator.isClaudeResponseExpected = false
                 if command == "claude" || command == "codex" {
                     context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
                 } else {
@@ -127,14 +132,31 @@ struct TerminalHostView: NSViewRepresentable {
             case .idle:
                 context.coordinator.foregroundCommand = nil
                 context.coordinator.agentActivationUptime = nil
+                context.coordinator.isClaudeResponseExpected = false
                 DispatchQueue.main.async { report(nil) }
             case nil:               break
             }
         }
         let reportAttention = onClaudeAttention
+        let reportClaudeTurnStarted = onAgentInputSubmitted
+        let reportClaudeTurnCompleted = onAgentWorkInterrupted
         terminal.getTerminal().registerOscHandler(code: ClaudeIntegration.oscCode) { payload in
-            guard let kind = ClaudeIntegration.parse(payload) else { return }
-            DispatchQueue.main.async { reportAttention(kind) }
+            if let kind = ClaudeIntegration.parse(payload) {
+                DispatchQueue.main.async {
+                    context.coordinator.isClaudeResponseExpected = kind.expectsUserResponse
+                    reportAttention(kind)
+                }
+            } else if ClaudeIntegration.isTurnStarted(payload) {
+                DispatchQueue.main.async {
+                    context.coordinator.isClaudeResponseExpected = false
+                    reportClaudeTurnStarted()
+                }
+            } else if ClaudeIntegration.isTurnCompleted(payload) {
+                DispatchQueue.main.async {
+                    context.coordinator.isClaudeResponseExpected = false
+                    reportClaudeTurnCompleted()
+                }
+            }
         }
         let reportCodexAttention = onCodexAttention
         terminal.getTerminal().registerOscHandler(code: CodexIntegration.oscCode) { payload in
@@ -253,6 +275,7 @@ struct TerminalHostView: NSViewRepresentable {
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var foregroundCommand: String?
         var agentActivationUptime: TimeInterval?
+        var isClaudeResponseExpected = false
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
@@ -352,22 +375,25 @@ enum TerminalKeyboardInput {
         return [0x0A]
     }
 
-    /// A plain Return submits the current prompt/approval in Claude and Codex.
-    /// Modifier-assisted Returns are editor/navigation gestures and must not
-    /// make an idle agent look busy.
+    /// A plain Return submits the current prompt/approval in Codex. Claude uses
+    /// its official `UserPromptSubmit` hook for top-level prompts, but a Return
+    /// also resumes work after a trusted permission/input attention event.
     static func isAgentSubmission(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
         foregroundCommand: String?,
         isAgentInputMode: Bool = true,
+        isClaudeResponseExpected: Bool = false,
         agentActivationUptime: TimeInterval? = nil,
         eventUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> Bool {
-        guard foregroundCommand == "claude" || foregroundCommand == "codex",
+        let isSubmissionOwner = foregroundCommand == "codex"
+            || (foregroundCommand == "claude" && isClaudeResponseExpected)
+        guard isSubmissionOwner,
               isAgentInputMode,
               returnKeyCodes.contains(keyCode) else { return false }
-        // Require the input mode enabled by agent TUIs so the shell Return that
-        // launches Claude/Codex cannot be reinterpreted as a submitted prompt.
+        // Require the input mode enabled by the TUI so the shell Return that
+        // launches it cannot be reinterpreted as a submitted prompt.
         // Keep a short transition guard as well because local event monitors and
         // PTY output can be delivered in either order on a fast launch.
         if let agentActivationUptime,

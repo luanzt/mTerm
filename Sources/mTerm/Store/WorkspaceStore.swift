@@ -334,9 +334,8 @@ final class WorkspaceStore: ObservableObject {
         agentWorkingSessionIDs.remove(id)
     }
 
-    /// A plain Return submitted inside an active agent TUI starts (or resumes)
-    /// work. Shift-Return is an editor newline and is deliberately excluded by
-    /// TerminalKeyboardInput before this method is called.
+    /// Starts (or resumes) an active agent's work. Claude reports this through
+    /// its `UserPromptSubmit` hook; Codex uses validated keyboard submission.
     func reportAgentInputSubmitted(_ id: SessionRecord.ID) {
         guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) else { return }
         agentWorkingSessionIDs.insert(id)

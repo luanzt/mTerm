@@ -57,12 +57,10 @@ final class TerminalKeyboardInputTests: XCTestCase {
     }
 
     func testPlainReturnSubmitsActiveAgentInput() {
-        for command in ["claude", "codex"] {
-            XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
-                keyCode: 36,
-                modifierFlags: [],
-                foregroundCommand: command))
-        }
+        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "codex"))
         XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 76,
             modifierFlags: .numericPad,
@@ -74,6 +72,15 @@ final class TerminalKeyboardInputTests: XCTestCase {
             keyCode: 36,
             modifierFlags: [],
             foregroundCommand: "git"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "claude"))
+        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "claude",
+            isClaudeResponseExpected: true))
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: .shift,
@@ -88,13 +95,13 @@ final class TerminalKeyboardInputTests: XCTestCase {
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: [],
-            foregroundCommand: "claude",
+            foregroundCommand: "codex",
             isAgentInputMode: false))
 
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: [],
-            foregroundCommand: "claude",
+            foregroundCommand: "codex",
             isAgentInputMode: true,
             agentActivationUptime: 100,
             eventUptime: 100.1))
@@ -102,7 +109,7 @@ final class TerminalKeyboardInputTests: XCTestCase {
         XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: [],
-            foregroundCommand: "claude",
+            foregroundCommand: "codex",
             isAgentInputMode: true,
             agentActivationUptime: 100,
             eventUptime: 101))

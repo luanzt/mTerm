@@ -196,11 +196,20 @@ output or an idle timer.
    `UNUserNotificationCenter` alert only while `NSApp` is inactive. Clicking it
    activates mTerm and focuses/reopens the originating session.
 
+The plugin also listens to Claude Code's official `UserPromptSubmit` and `Stop`
+lifecycle events and emits distinct private `OSC 777;state;mTerm Claude`
+`turn_started`/`turn_completed` payloads. These payloads drive only the sidebar's
+working spinner around the main agent's turn; they are never forwarded as
+attention notifications and do not inspect prompt, transcript, or assistant-
+message fields.
+
 Authorization is requested in context the first time a supported agent starts,
-rather than at app launch. Do not replace the Claude hook with `Stop` (which is
-not synonymous with "needs attention"), output regexes, process polling, or a
-quiet-time heuristic. Keep the OSC parser restricted to mTerm's marker and known
-enum values so arbitrary terminal programs cannot forge these alerts.
+rather than at app launch. Do not replace the Claude `Notification` hook with
+`Stop` (which is not synonymous with "needs attention"), or use output regexes,
+process polling, or a quiet-time heuristic. `Stop` is allowed only for the
+non-notifying working-state transition above. Keep the OSC parser restricted to
+mTerm's marker and known enum/state values so arbitrary terminal programs cannot
+forge these events.
 
 Foreground-command markers use zsh `preexec`'s alias-expanded command argument,
 so aliases such as `cs='claude --model ...'` still activate Claude's pane icon,
@@ -244,15 +253,16 @@ Ordinary terminal sessions use a graphite app tile with a green `>` and white
 underscore instead of a status dot; exited sessions dim that prompt motif.
 
 The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
-a submitted response. A plain Return in the agent pane starts the working state;
-the agent's trusted attention/completion event, Escape/Ctrl-C interruption,
-returning to the shell, or closing the session clears it. Shift-Return and other
-modified Returns do not start the spinner because they edit or navigate the agent
-input rather than submit it. Submission tracking is enabled only after the agent
-TUI enters bracketed-paste input mode, with an additional foreground-transition
-grace period, so the shell Return that launches an agent cannot immediately make
-the TUI look like submitted work. Keep this indicator out of pane headers and
-terminal content.
+a submitted response. Claude's official `UserPromptSubmit`/`Stop` events start
+and finish that state deterministically. After a trusted Claude permission,
+elicitation, or agent-needs-input notification, Return may also resume its state
+without a new top-level prompt. Codex starts the state from a plain Return in the
+TUI and clears it through its built-in attention event. Escape/Ctrl-C, returning
+to the shell, or closing the session also clears either agent's state. Modified
+Returns do not start the spinner; keyboard submission tracking requires the TUI's
+bracketed-paste input mode plus the existing foreground-transition grace period,
+so the shell Return that launches an agent is not treated as submitted work.
+Keep this indicator out of pane headers and terminal content.
 
 #### Agent conversation titles
 
