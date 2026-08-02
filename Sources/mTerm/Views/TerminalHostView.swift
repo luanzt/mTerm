@@ -89,7 +89,10 @@ struct TerminalHostView: NSViewRepresentable {
             if TerminalKeyboardInput.isAgentSubmission(
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags,
-                foregroundCommand: context.coordinator.foregroundCommand
+                foregroundCommand: context.coordinator.foregroundCommand,
+                isAgentInputMode: terminal.getTerminal().bracketedPasteMode,
+                agentActivationUptime: context.coordinator.agentActivationUptime,
+                eventUptime: event.timestamp
             ) {
                 context.coordinator.onAgentInputSubmitted()
             } else if TerminalKeyboardInput.isAgentInterruption(
@@ -114,10 +117,16 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.getTerminal().registerOscHandler(code: ShellIntegration.oscCode) { payload in
             switch ShellIntegration.parse(payload) {
             case .run(let command):
+                if command == "claude" || command == "codex" {
+                    context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
+                } else {
+                    context.coordinator.agentActivationUptime = nil
+                }
                 context.coordinator.foregroundCommand = command
                 DispatchQueue.main.async { report(command) }
             case .idle:
                 context.coordinator.foregroundCommand = nil
+                context.coordinator.agentActivationUptime = nil
                 DispatchQueue.main.async { report(nil) }
             case nil:               break
             }
@@ -243,6 +252,7 @@ struct TerminalHostView: NSViewRepresentable {
         var keyDownMonitor: Any?
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var foregroundCommand: String?
+        var agentActivationUptime: TimeInterval?
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
@@ -348,10 +358,22 @@ enum TerminalKeyboardInput {
     static func isAgentSubmission(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
-        foregroundCommand: String?
+        foregroundCommand: String?,
+        isAgentInputMode: Bool = true,
+        agentActivationUptime: TimeInterval? = nil,
+        eventUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> Bool {
         guard foregroundCommand == "claude" || foregroundCommand == "codex",
+              isAgentInputMode,
               returnKeyCodes.contains(keyCode) else { return false }
+        // Require the input mode enabled by agent TUIs so the shell Return that
+        // launches Claude/Codex cannot be reinterpreted as a submitted prompt.
+        // Keep a short transition guard as well because local event monitors and
+        // PTY output can be delivered in either order on a fast launch.
+        if let agentActivationUptime,
+           eventUptime - agentActivationUptime < 0.25 {
+            return false
+        }
         return modifierFlags
             .intersection([.shift, .command, .control, .option])
             .isEmpty

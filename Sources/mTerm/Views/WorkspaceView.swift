@@ -440,10 +440,7 @@ private struct SessionSidebarRow: View {
             }
             Spacer()
             if workspace.agentWorkingSessionIDs.contains(session.id) {
-                ProgressView()
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .tint(MTermTheme.accent)
+                WanderSpinner(size: 11, color: .white)
                     .frame(width: 16, height: 16)
                     .accessibilityLabel("Agent is working")
             }

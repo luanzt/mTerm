@@ -84,6 +84,30 @@ final class TerminalKeyboardInputTests: XCTestCase {
             foregroundCommand: "codex"))
     }
 
+    func testLaunchReturnDoesNotSubmitAgentInput() {
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "claude",
+            isAgentInputMode: false))
+
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "claude",
+            isAgentInputMode: true,
+            agentActivationUptime: 100,
+            eventUptime: 100.1))
+
+        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "claude",
+            isAgentInputMode: true,
+            agentActivationUptime: 100,
+            eventUptime: 101))
+    }
+
     func testEscapeAndControlCInterruptActiveAgent() {
         for command in ["claude", "codex"] {
             XCTAssertTrue(TerminalKeyboardInput.isAgentInterruption(

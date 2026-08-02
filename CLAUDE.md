@@ -248,8 +248,11 @@ a submitted response. A plain Return in the agent pane starts the working state;
 the agent's trusted attention/completion event, Escape/Ctrl-C interruption,
 returning to the shell, or closing the session clears it. Shift-Return and other
 modified Returns do not start the spinner because they edit or navigate the agent
-input rather than submit it. Keep this indicator out of pane headers and terminal
-content.
+input rather than submit it. Submission tracking is enabled only after the agent
+TUI enters bracketed-paste input mode, with an additional foreground-transition
+grace period, so the shell Return that launches an agent cannot immediately make
+the TUI look like submitted work. Keep this indicator out of pane headers and
+terminal content.
 
 #### Agent conversation titles
 
