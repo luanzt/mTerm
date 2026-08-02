@@ -1271,29 +1271,13 @@ private struct TerminalPaneDropDelegate: DropDelegate {
         let allowed = workspace.draggedPaneSessionID == dragged
             ? workspace.allowedZonesForMovingPane(dragged, onPaneWith: targetSessionID)
             : workspace.allowedZones(forPaneWith: targetSessionID)
-        dropZone = filtered(
-            info,
-            allowed,
-            fallbackToCenter: workspace.draggedPaneSessionID != dragged)
-    }
-
-    private func filtered(
-        _ info: DropInfo,
-        _ allowed: Set<DropZone>,
-        fallbackToCenter: Bool
-    ) -> DropZone? {
-        let z = zone(for: info.location)
-        if allowed.contains(z) { return z }
-        return fallbackToCenter && allowed.contains(.center) ? .center : nil
-    }
-
-    private func zone(for point: CGPoint) -> DropZone {
-        guard size.width > 0, size.height > 0 else { return .center }
-        let x = point.x / size.width, y = point.y / size.height
-        let candidates: [(DropZone, CGFloat)] = [(.left, x), (.right, 1 - x), (.top, y), (.bottom, 1 - y)]
-        if let nearest = candidates.min(by: { $0.1 < $1.1 }), nearest.1 < 0.25 {
-            return nearest.0
-        }
-        return .center
+        dropZone = PaneDropZoneResolver.resolve(
+            point: info.location,
+            size: size,
+            allowed: allowed,
+            // Pane moves must not inherit dead areas from edges that the
+            // current grid capacity cannot accept. Sidebar drops retain their
+            // existing edge-selection and center-fallback behavior.
+            prioritizingAllowedEdges: workspace.draggedPaneSessionID == dragged)
     }
 }

@@ -5,6 +5,44 @@ enum DropZone: Equatable {
     case center, left, right, top, bottom
 }
 
+/// Resolves a pointer location to a destination that the current grid can
+/// actually accept. Ignoring unavailable edges before choosing the nearest one
+/// keeps the rest of the target as a stable center drop instead of creating
+/// dead areas where releasing the mouse silently cancels the move.
+struct PaneDropZoneResolver {
+    static func resolve(
+        point: CGPoint,
+        size: CGSize,
+        allowed: Set<DropZone>,
+        prioritizingAllowedEdges: Bool = false,
+        edgeThreshold: CGFloat = 0.25
+    ) -> DropZone? {
+        guard !allowed.isEmpty else { return nil }
+        guard size.width > 0, size.height > 0 else {
+            return allowed.contains(.center) ? .center : nil
+        }
+
+        let x = point.x / size.width
+        let y = point.y / size.height
+        let allEdgeCandidates: [(DropZone, CGFloat)] = [
+            (.left, x),
+            (.right, 1 - x),
+            (.top, y),
+            (.bottom, 1 - y),
+        ]
+        let edgeCandidates = prioritizingAllowedEdges
+            ? allEdgeCandidates.filter { allowed.contains($0.0) }
+            : allEdgeCandidates
+
+        if let nearest = edgeCandidates.min(by: { $0.1 < $1.1 }),
+           nearest.1 < edgeThreshold,
+           allowed.contains(nearest.0) {
+            return nearest.0
+        }
+        return allowed.contains(.center) ? .center : nil
+    }
+}
+
 struct GridColumn: Equatable {
     var panes: [UUID]
     var widthFraction: CGFloat = 1

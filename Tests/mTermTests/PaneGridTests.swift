@@ -190,3 +190,48 @@ final class PaneGridTests: XCTestCase {
         XCTAssertEqual(g.columns[0].rowFraction, 0.2, accuracy: 0.0001)
     }
 }
+
+final class PaneDropZoneResolverTests: XCTestCase {
+    private let size = CGSize(width: 200, height: 100)
+    private let allZones: Set<DropZone> = [.center, .left, .right, .top, .bottom]
+
+    func testCenterResolvesToSwapZone() {
+        XCTAssertEqual(
+            PaneDropZoneResolver.resolve(
+                point: CGPoint(x: 100, y: 50), size: size, allowed: allZones),
+            .center)
+    }
+
+    func testAllowedEdgeResolvesToMoveZone() {
+        XCTAssertEqual(
+            PaneDropZoneResolver.resolve(
+                point: CGPoint(x: 10, y: 50), size: size, allowed: allZones),
+            .left)
+    }
+
+    func testUnavailableEdgeFallsBackToCenterInsteadOfCancelling() {
+        XCTAssertEqual(
+            PaneDropZoneResolver.resolve(
+                point: CGPoint(x: 10, y: 50),
+                size: size,
+                allowed: [.center, .top, .bottom],
+                prioritizingAllowedEdges: true),
+            .center)
+    }
+
+    func testCornerChoosesNearestAllowedEdge() {
+        XCTAssertEqual(
+            PaneDropZoneResolver.resolve(
+                point: CGPoint(x: 2, y: 10),
+                size: size,
+                allowed: [.center, .top, .bottom],
+                prioritizingAllowedEdges: true),
+            .top)
+    }
+
+    func testReturnsNilWhenNoDestinationCoversThePoint() {
+        XCTAssertNil(
+            PaneDropZoneResolver.resolve(
+                point: CGPoint(x: 100, y: 50), size: size, allowed: [.left]))
+    }
+}

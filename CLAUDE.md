@@ -112,7 +112,9 @@ drag is disabled while maximized. A center drop swaps the two visual slots,
 while edge drops move the source beside/above/below the target without hiding a
 session. Capacity checks run after hypothetically removing the source, allowing
 same-column row reorder and reuse of a column freed at the three-column limit.
-New row moves reset that column to 50/50. Keep this pane-move state distinct from
+Unavailable edges are excluded from hit-testing so the remaining target area
+falls back to a stable center swap rather than silently cancelling the drop. New
+row moves reset that column to 50/50. Keep this pane-move state distinct from
 sidebar session drags, whose center drop retains its open/replace behavior.
 
 ### Rendering: `WorkspaceView.swift`
