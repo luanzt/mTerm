@@ -342,6 +342,13 @@ final class WorkspaceStore: ObservableObject {
         agentWorkingSessionIDs.insert(id)
     }
 
+    /// Escape and Ctrl-C interrupt an in-flight Claude/Codex turn and return the
+    /// TUI to user input without necessarily producing an attention event.
+    func reportAgentWorkInterrupted(_ id: SessionRecord.ID) {
+        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) else { return }
+        agentWorkingSessionIDs.remove(id)
+    }
+
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
         guard session(for: id) != nil,
               !manuallyRenamedSessionIDs.contains(id) else { return }

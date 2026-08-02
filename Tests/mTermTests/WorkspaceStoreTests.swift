@@ -688,6 +688,21 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
     }
 
+    func testAgentWorkingStateClearsWhenTurnIsInterrupted() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.reportAgentWorkInterrupted(session.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.setForeground(session.id, command: "claude")
+        store.reportAgentInputSubmitted(session.id)
+        XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
+
+        store.reportAgentWorkInterrupted(session.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+    }
+
     func testAgentTitleTemporarilyOverridesStableSessionTitle() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]
