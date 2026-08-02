@@ -373,6 +373,20 @@ struct SessionDropTarget: Equatable {
     let after: Bool
 }
 
+enum SessionSidebarClickAction: Equatable {
+    case openActivePane
+    case openNewPane
+    case rename
+
+    static func resolve(
+        clickCount: Int,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Self {
+        if clickCount >= 2 { return .rename }
+        return modifierFlags.contains(.command) ? .openNewPane : .openActivePane
+    }
+}
+
 private struct SessionSidebarRow: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
@@ -463,15 +477,22 @@ private struct SessionSidebarRow: View {
         .padding(.leading, isNested ? 12 : 0)
         .opacity(workspace.draggedSessionID == session.id ? 0.4 : 1)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            beginRenaming()
-        }
         .onTapGesture {
             guard !isRenaming else { return }
-            if NSEvent.modifierFlags.contains(.command) {
-                workspace.openInNewPane(session.id)
-            } else {
+            // A separate double-tap gesture makes SwiftUI defer every single
+            // click until the system double-click interval expires. Resolve
+            // both from the current AppKit event so opening a pane is immediate;
+            // the second click of a double-click still enters rename mode.
+            switch SessionSidebarClickAction.resolve(
+                clickCount: NSApp.currentEvent?.clickCount ?? 1,
+                modifierFlags: NSEvent.modifierFlags
+            ) {
+            case .openActivePane:
                 workspace.openInActivePane(session.id)
+            case .openNewPane:
+                workspace.openInNewPane(session.id)
+            case .rename:
+                beginRenaming()
             }
         }
         .onDrag {

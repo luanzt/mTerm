@@ -154,6 +154,9 @@ image-aware agent TUIs can attach Simulator screenshots.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.
+Sidebar session rows resolve single-click, Command-click, and double-click from
+one tap handler. Do not install competing single/double SwiftUI tap gestures:
+that defers every pane switch until macOS's double-click interval expires.
 `TerminalHostView.updateNSView` also applies changed font and ANSI settings to
 that same persistent view. It caches the last applied values in its coordinator
 so unrelated SwiftUI updates do not repeatedly reset fonts, palettes, or PTY size.
