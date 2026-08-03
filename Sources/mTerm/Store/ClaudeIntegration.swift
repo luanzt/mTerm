@@ -205,6 +205,18 @@ enum ClaudeIntegration {
                   }
                 ]
               }
+            ],
+            "StopFailure": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh",
+                    "args": ["turn_failed"],
+                    "timeout": 5
+                  }
+                ]
+              }
             ]
           }
         }
@@ -226,6 +238,15 @@ enum ClaudeIntegration {
       turn_completed)
         printf '{"terminalSequence":"\\\\u001b]777;state;mTerm Claude;turn_completed\\\\u0007"}\\n'
         ;;
+      turn_failed)
+        # StopFailure ignores hook output, so write the non-notifying state
+        # sequence to the pane PTY captured by the executable shim.
+        case "${MTERM_CLAUDE_TTY:-}" in
+          /dev/tty*)
+            printf '\\033]777;state;mTerm Claude;turn_completed\\007' >"$MTERM_CLAUDE_TTY" 2>/dev/null || true
+            ;;
+        esac
+        ;;
     esac
     """
 
@@ -241,6 +262,11 @@ enum ClaudeIntegration {
     if [[ -z "$real_claude" || "$real_claude" == "$0" ]]; then
       print -u2 "mTerm: could not find the Claude Code executable"
       exit 127
+    fi
+    unset MTERM_CLAUDE_TTY
+    mterm_claude_tty="$(tty 2>/dev/null)"
+    if [[ "$mterm_claude_tty" == /dev/tty* ]]; then
+      export MTERM_CLAUDE_TTY="$mterm_claude_tty"
     fi
     exec "$real_claude" --plugin-dir "$plugin_dir" "$@"
     """ + "\n"

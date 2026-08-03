@@ -153,12 +153,14 @@ struct TerminalHostView: NSViewRepresentable {
                     context.coordinator.isClaudeResponseExpected = kind.expectsUserResponse
                     reportAttention(kind)
                 }
-            } else if ClaudeIntegration.isTurnStarted(payload) {
+            } else if context.coordinator.foregroundCommand == "claude",
+                      ClaudeIntegration.isTurnStarted(payload) {
                 DispatchQueue.main.async {
                     context.coordinator.isClaudeResponseExpected = false
                     reportClaudeTurnStarted()
                 }
-            } else if ClaudeIntegration.isTurnCompleted(payload) {
+            } else if context.coordinator.foregroundCommand == "claude",
+                      ClaudeIntegration.isTurnCompleted(payload) {
                 DispatchQueue.main.async {
                     context.coordinator.isClaudeResponseExpected = false
                     reportClaudeTurnCompleted()

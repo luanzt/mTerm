@@ -71,9 +71,11 @@ final class ClaudeIntegrationTests: XCTestCase {
             XCTAssertTrue(hooksText.contains("\"matcher\": \"\(kind.rawValue)\""))
         }
         XCTAssertTrue(hooksText.contains("\"Stop\""))
+        XCTAssertTrue(hooksText.contains("\"StopFailure\""))
         XCTAssertTrue(hooksText.contains("\"UserPromptSubmit\""))
         XCTAssertTrue(hooksText.contains("\"turn_started\""))
         XCTAssertTrue(hooksText.contains("\"turn_completed\""))
+        XCTAssertTrue(hooksText.contains("\"turn_failed\""))
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: hookScript.path))
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: shim.path))
     }
@@ -126,6 +128,75 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(
             object["terminalSequence"],
             "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}")
+    }
+
+    func testStopFailureHookWritesTurnCompletionSequenceToControllingTerminal() throws {
+        XCTAssertTrue(ClaudeIntegration.writeFiles())
+        let hook = ClaudeIntegration.pluginDirectory
+            .appendingPathComponent("scripts/notify.sh")
+        let process = Process()
+        let output = Pipe()
+        let input = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        process.arguments = [
+            "-q", "/dev/null",
+            "/usr/bin/env", "MTERM_CLAUDE_TTY=/dev/tty",
+            hook.path, "turn_failed",
+        ]
+        process.standardInput = input
+        process.standardOutput = output
+        try process.run()
+        input.fileHandleForWriting.write(Data("{}".utf8))
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        let expected = Data(
+            "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}".utf8)
+        XCTAssertNotNil(data.range(of: expected))
+    }
+
+    func testClaudeShimCapturesPaneTTYAndPreservesArguments() throws {
+        XCTAssertTrue(ClaudeIntegration.writeFiles())
+        let manager = FileManager.default
+        let fakeBin = manager.temporaryDirectory
+            .appendingPathComponent("mterm-claude-test-\(UUID().uuidString)", isDirectory: true)
+        try manager.createDirectory(at: fakeBin, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: fakeBin) }
+
+        let fakeClaude = fakeBin.appendingPathComponent("claude")
+        try """
+        #!/bin/sh
+        printf 'tty=%s\\n' "$MTERM_CLAUDE_TTY"
+        printf 'arg=%s\\n' "$@"
+        """.write(to: fakeClaude, atomically: true, encoding: .utf8)
+        try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeClaude.path)
+
+        let shim = ClaudeIntegration.shimDirectory.appendingPathComponent("claude")
+        let process = Process()
+        let output = Pipe()
+        let input = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        process.arguments = ["-q", "/dev/null", shim.path, "resume", "--last"]
+        process.environment = [
+            "PATH": "\(ClaudeIntegration.shimDirectory.path):\(fakeBin.path):/usr/bin:/bin",
+        ]
+        process.standardInput = input
+        process.standardOutput = output
+        try process.run()
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        let text = String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(),
+            as: UTF8.self)
+        XCTAssertTrue(text.contains("tty=/dev/tty"))
+        XCTAssertTrue(text.contains("arg=--plugin-dir"))
+        XCTAssertTrue(text.contains("arg=\(ClaudeIntegration.pluginDirectory.path)"))
+        XCTAssertTrue(text.contains("arg=resume"))
+        XCTAssertTrue(text.contains("arg=--last"))
     }
 
     func testPromptHookProducesPrivateTurnStartedSequence() throws {

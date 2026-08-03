@@ -208,11 +208,14 @@ output or an idle timer.
    `UNUserNotificationCenter` alert only while `NSApp` is inactive. Clicking it
    activates mTerm and focuses/reopens the originating session.
 
-The plugin also listens to Claude Code's official `UserPromptSubmit` and `Stop`
-lifecycle events and emits distinct private `OSC 777;state;mTerm Claude`
-`turn_started`/`turn_completed` payloads. These payloads drive only the sidebar's
-working spinner around the main agent's turn; they are never forwarded as
-attention notifications and do not inspect prompt, transcript, or assistant-
+The plugin also listens to Claude Code's official `UserPromptSubmit`, `Stop`,
+and `StopFailure` lifecycle events and emits distinct private
+`OSC 777;state;mTerm Claude` `turn_started`/`turn_completed` payloads. Claude
+ignores hook output for `StopFailure`, so the executable shim captures the
+pane's controlling PTY before launching Claude and that handler writes the same
+non-notifying completion sequence to it directly. These payloads drive only the
+sidebar's working spinner around the main agent's turn; they are never forwarded
+as attention notifications and do not inspect prompt, transcript, or assistant-
 message fields.
 
 Authorization is requested in context the first time a supported agent starts,
@@ -265,16 +268,17 @@ Ordinary terminal sessions use a graphite app tile with a green `>` and white
 underscore instead of a status dot; exited sessions dim that prompt motif.
 
 The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
-a submitted response. Claude's official `UserPromptSubmit`/`Stop` events start
-and finish that state deterministically. After a trusted Claude permission,
-elicitation, or agent-needs-input notification, Return may also resume its state
-without a new top-level prompt. Codex starts the state from a plain Return in the
-TUI and clears it through its built-in attention event. Escape/Ctrl-C, returning
-to the shell, or closing the session also clears either agent's state. Modified
-Returns do not start the spinner; keyboard submission tracking requires the TUI's
-bracketed-paste input mode plus the existing foreground-transition grace period,
-so the shell Return that launches an agent is not treated as submitted work.
-Keep this indicator out of pane headers and terminal content.
+a submitted response. Claude's official `UserPromptSubmit` event starts that
+state; `Stop` finishes successful turns and `StopFailure` finishes API errors,
+including rate limits. After a trusted Claude permission, elicitation, or
+agent-needs-input notification, Return may also resume its state without a new
+top-level prompt. Codex starts the state from a plain Return in the TUI and clears
+it through its built-in attention event. Escape/Ctrl-C, returning to the shell,
+or closing the session also clears either agent's state. Modified Returns do not
+start the spinner; keyboard submission tracking requires the TUI's bracketed-
+paste input mode plus the existing foreground-transition grace period, so the
+shell Return that launches an agent is not treated as submitted work. Keep this
+indicator out of pane headers and terminal content.
 
 #### Agent conversation titles
 
