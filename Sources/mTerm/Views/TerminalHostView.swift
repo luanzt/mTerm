@@ -32,6 +32,10 @@ struct TerminalHostView: NSViewRepresentable {
     /// Selects the owning pane when Finder drops one or more files directly on
     /// its AppKit-backed terminal view.
     var onFileDrop: () -> Void = {}
+    /// Registers the PTY shell with app-owned lifecycle cleanup.
+    var onProcessStarted: (pid_t) -> Void = { _ in }
+    /// Cleans up any remaining process in this terminal's Unix session.
+    var onProcessTeardown: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -72,6 +76,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onFileDrop = onFileDrop
+        context.coordinator.onProcessTeardown = onProcessTeardown
         terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
             DispatchQueue.main.async {
                 guard let coordinator, let terminal else { return }
@@ -197,6 +202,7 @@ struct TerminalHostView: NSViewRepresentable {
                               args: arguments,
                               environment: environment,
                               currentDirectory: directory)
+            onProcessStarted(term.process.shellPid)
         }
 
         terminal.postsFrameChangedNotifications = true
@@ -226,6 +232,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onFileDrop = onFileDrop
+        context.coordinator.onProcessTeardown = onProcessTeardown
         if context.coordinator.appliedFontName != fontName
             || context.coordinator.appliedFontSize != fontSize {
             nsView.font = terminalFont
@@ -261,6 +268,7 @@ struct TerminalHostView: NSViewRepresentable {
             coordinator.keyDownMonitor = nil
         }
         if coordinator.didStartProcess {
+            coordinator.onProcessTeardown()
             nsView.terminate()
         }
     }
@@ -284,6 +292,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onAgentInputSubmitted: () -> Void = {}
         var onAgentWorkInterrupted: () -> Void = {}
         var onFileDrop: () -> Void = {}
+        var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
@@ -349,7 +358,9 @@ struct TerminalHostView: NSViewRepresentable {
         func processTerminated(
             source: TerminalView,
             exitCode: Int32?
-        ) {}
+        ) {
+            onProcessTeardown()
+        }
 
         func cancelPendingTitleUpdate() {
             pendingTitleUpdate?.cancel()

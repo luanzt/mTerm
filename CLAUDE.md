@@ -68,8 +68,9 @@ override an explicit pane selection.
 title is shared by the sidebar, pane header, and notification subtitle, and takes
 precedence over later transient Claude/Codex OSC titles for that session.
 Workspace folder rows expose creation in the active pane or a split, Finder and
-path actions, and a display-name-only rename. Removing a workspace never deletes
-the folder or ends a process: its live sessions are detached into Open Sessions.
+path actions, and a display-name-only rename. Removing a workspace asks for
+confirmation, closes all of its terminal sessions and their process trees, but
+never deletes the folder on disk.
 Session rows expose active-pane/split opening, a fresh terminal in the same live
 directory, Finder/path actions, rename, and close. Double-clicking a session row
 renames it inline; Return or focus loss commits, while Escape cancels.
@@ -169,6 +170,12 @@ that same persistent view. It caches the last applied values in its coordinator
 so unrelated SwiftUI updates do not repeatedly reset fonts, palettes, or PTY size.
 The standalone SwiftTerm `NSScroller` is hidden to remove the trailing gray bar;
 scrollback remains enabled through SwiftTerm's direct wheel/trackpad handling.
+`TerminalProcessRegistry` records each PTY shell's Unix session ID. Closing a
+session, removing a workspace, and quitting mTerm signal every process still in
+the corresponding terminal session, then escalate from SIGTERM to SIGKILL after
+a short grace period. Cleanup is app-owned and must not depend only on SwiftUI's
+eventual `dismantleNSView`; that hook remains an idempotent fallback and releases
+SwiftTerm's PTY resources.
 
 `ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
 with `TERM_PROGRAM=mTerm`, advertises true color, and defaults

@@ -34,7 +34,7 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.workspaces[0].name, "example-workspace")
     }
 
-    func testRemoveWorkspaceDetachesSessionsWithoutClosingThem() throws {
+    func testRemoveWorkspaceClosesSessions() throws {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let folder = WorkspaceFolder(path: "/tmp/example-workspace")
         defaults.set(
@@ -43,13 +43,14 @@ final class WorkspaceStoreTests: XCTestCase {
         let store = WorkspaceStore(defaults: defaults)
         store.createSession(in: folder)
         let session = try XCTUnwrap(store.sessions.last)
+        var closedSessionIDs: [SessionRecord.ID] = []
+        store.onCloseSession = { closedSessionIDs.append($0) }
 
         store.removeWorkspace(folder.id)
 
         XCTAssertTrue(store.workspaces.isEmpty)
-        XCTAssertEqual(store.session(for: session.id)?.workspaceID, nil)
-        XCTAssertEqual(store.session(for: session.id)?.status, .running)
-        XCTAssertTrue(store.grid.paneIDs.contains(session.id))
+        XCTAssertNil(store.session(for: session.id))
+        XCTAssertEqual(closedSessionIDs, [session.id])
     }
 
     func testCreateSessionInSameDirectoryPreservesWorkspaceAndOpensSplit() throws {

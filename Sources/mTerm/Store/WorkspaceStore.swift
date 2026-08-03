@@ -58,6 +58,7 @@ final class WorkspaceStore: ObservableObject {
     /// session before forwarding a trusted agent attention event.
     var onClaudeAttention: ((SessionRecord, ClaudeIntegration.AttentionKind) -> Void)?
     var onCodexAttention: ((SessionRecord) -> Void)?
+    var onCloseSession: ((SessionRecord.ID) -> Void)?
 
     init(
         defaults: UserDefaults = .standard,
@@ -187,14 +188,14 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    /// Removes a folder grouping without deleting anything on disk or ending
-    /// its shell processes. Existing sessions become ungrouped Open Sessions.
+    /// Deletes a workspace and closes all terminals belonging to it.
     func removeWorkspace(_ id: WorkspaceFolder.ID) {
         guard workspaces.contains(where: { $0.id == id }) else { return }
-        workspaces.removeAll { $0.id == id }
-        for index in sessions.indices where sessions[index].workspaceID == id {
-            sessions[index].workspaceID = nil
+        let workspaceSessions = sessions.filter { $0.workspaceID == id }
+        for session in workspaceSessions {
+            close(session)
         }
+        workspaces.removeAll { $0.id == id }
         persist()
     }
 
@@ -232,6 +233,7 @@ final class WorkspaceStore: ObservableObject {
 
     func close(_ session: SessionRecord) {
         guard let index = sessions.firstIndex(of: session) else { return }
+        onCloseSession?(session.id)
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
         codexSessionIDs.remove(session.id)

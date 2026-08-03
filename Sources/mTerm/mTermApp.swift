@@ -7,6 +7,7 @@ import SwiftUI
 final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let workspace = WorkspaceStore()
     private let settings = AppSettings()
+    private let terminalProcesses = TerminalProcessRegistry()
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
     private lazy var agentNotifications = AgentNotificationCoordinator()
@@ -29,6 +30,9 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         workspace.onCodexAttention = { [weak self] session in
             self?.agentNotifications.deliver(.codex, from: session)
         }
+        workspace.onCloseSession = { [weak self] sessionID in
+            self?.terminalProcesses.terminate(sessionID)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,6 +40,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         let content = WorkspaceView()
             .environmentObject(workspace)
             .environmentObject(settings)
+            .environmentObject(terminalProcesses)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
@@ -82,6 +87,15 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminalProcesses.terminateAll(force: true)
+        // Release every SwiftTerm view so its PTY descriptors and observers are
+        // dismantled before the process exits.
+        window?.contentView = nil
+        settingsWindow?.contentView = nil
+        return .terminateNow
     }
 
     @objc private func toggleSidebar(_ sender: Any?) {

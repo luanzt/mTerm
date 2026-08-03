@@ -212,6 +212,7 @@ private struct WorkspaceFolderRow: View {
     @State private var rowHeight: CGFloat = 34
     @State private var isHovering = false
     @State private var isRenaming = false
+    @State private var isConfirmingRemoval = false
     @State private var nameDraft = ""
 
     var body: some View {
@@ -301,7 +302,7 @@ private struct WorkspaceFolderRow: View {
             }
             Divider()
             Button("Remove Workspace", role: .destructive) {
-                workspace.removeWorkspace(folder.id)
+                isConfirmingRemoval = true
             }
         }
         .alert("Rename Workspace", isPresented: $isRenaming) {
@@ -312,6 +313,18 @@ private struct WorkspaceFolderRow: View {
             }
         } message: {
             Text("Only the name shown in mTerm changes. The folder on disk is not renamed.")
+        }
+        .confirmationDialog(
+            "Remove \(folder.name)?",
+            isPresented: $isConfirmingRemoval,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                workspace.removeWorkspace(folder.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Closes \(count) terminal\(count == 1 ? "" : "s") and their running processes. The folder on disk is not deleted.")
         }
     }
 
@@ -938,6 +951,7 @@ private struct ResizeHandle: View {
 private struct TerminalPane: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var terminalProcesses: TerminalProcessRegistry
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
@@ -979,6 +993,12 @@ private struct TerminalPane: View {
                                  },
                                  onFileDrop: {
                                      workspace.selectedSessionID = session.id
+                                 },
+                                 onProcessStarted: {
+                                     terminalProcesses.register(session.id, shellPID: $0)
+                                 },
+                                 onProcessTeardown: {
+                                     terminalProcesses.terminate(session.id)
                                  })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
