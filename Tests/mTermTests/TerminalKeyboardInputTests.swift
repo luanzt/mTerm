@@ -67,6 +67,22 @@ final class TerminalKeyboardInputTests: XCTestCase {
             foregroundCommand: "codex"))
     }
 
+    func testCodexSlashCommandDoesNotSubmitAgentInput() {
+        for inputLine in ["› /clear", "│ › /clear", "  /rename New title"] {
+            XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+                keyCode: 36,
+                modifierFlags: [],
+                foregroundCommand: "codex",
+                codexInputLine: inputLine))
+        }
+
+        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "codex",
+            codexInputLine: "› please inspect /clear behavior"))
+    }
+
     func testReturnDoesNotSubmitOutsideAgentOrWithEditingModifiers() {
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,

@@ -97,6 +97,8 @@ struct TerminalHostView: NSViewRepresentable {
                 modifierFlags: event.modifierFlags,
                 foregroundCommand: foregroundCommand,
                 isAgentInputMode: terminal.getTerminal().bracketedPasteMode,
+                codexInputLine: TerminalKeyboardInput.currentInputLine(
+                    in: terminal.getTerminal()),
                 isClaudeResponseExpected: context.coordinator.isClaudeResponseExpected,
                 agentActivationUptime: context.coordinator.agentActivationUptime,
                 eventUptime: event.timestamp
@@ -394,6 +396,7 @@ enum TerminalKeyboardInput {
         modifierFlags: NSEvent.ModifierFlags,
         foregroundCommand: String?,
         isAgentInputMode: Bool = true,
+        codexInputLine: String? = nil,
         isClaudeResponseExpected: Bool = false,
         agentActivationUptime: TimeInterval? = nil,
         eventUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
@@ -403,6 +406,14 @@ enum TerminalKeyboardInput {
         guard isSubmissionOwner,
               isAgentInputMode,
               returnKeyCodes.contains(keyCode) else { return false }
+        // Codex handles slash commands locally. They do not start an agent turn
+        // and therefore do not emit the completion notification that normally
+        // clears the sidebar spinner.
+        if foregroundCommand == "codex",
+           let codexInputLine,
+           isCodexLocalCommand(codexInputLine) {
+            return false
+        }
         // Require the input mode enabled by the TUI so the shell Return that
         // launches it cannot be reinterpreted as a submitted prompt.
         // Keep a short transition guard as well because local event monitors and
@@ -414,6 +425,45 @@ enum TerminalKeyboardInput {
         return modifierFlags
             .intersection([.shift, .command, .control, .option])
             .isEmpty
+    }
+
+    /// Reads the visible logical line up to the cursor. Codex redraws its input
+    /// box into the terminal buffer, so this also covers text inserted by paste,
+    /// completion, or input methods instead of trying to mirror key presses.
+    static func currentInputLine(in terminal: Terminal) -> String? {
+        let cursor = terminal.getCursorLocation()
+        guard cursor.y >= 0,
+              cursor.x >= 0,
+              let currentLine = terminal.getLine(row: cursor.y) else {
+            return nil
+        }
+
+        var text = currentLine.translateToString(
+            startCol: 0,
+            endCol: min(cursor.x, currentLine.count),
+            skipNullCellsFollowingWide: true)
+        var row = cursor.y
+        var line = currentLine
+        while line.isWrapped, row > 0 {
+            row -= 1
+            guard let previousLine = terminal.getLine(row: row) else { break }
+            text = previousLine.translateToString(
+                trimRight: true,
+                skipNullCellsFollowingWide: true) + text
+            line = previousLine
+        }
+        return text
+    }
+
+    static func isCodexLocalCommand(_ inputLine: String) -> Bool {
+        guard let slash = inputLine.firstIndex(of: "/") else { return false }
+        let prefix = inputLine[..<slash]
+        guard !prefix.contains(where: { $0.isLetter || $0.isNumber }) else {
+            return false
+        }
+        let commandStart = inputLine.index(after: slash)
+        guard commandStart < inputLine.endIndex else { return false }
+        return inputLine[commandStart].isLetter
     }
 
     /// Claude and Codex both use Escape or Ctrl-C to interrupt an active turn.
