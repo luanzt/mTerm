@@ -6,6 +6,8 @@ struct TerminalHostView: NSViewRepresentable {
     let session: SessionRecord
     let isVisible: Bool
     let isFocused: Bool
+    let searchController: TerminalSearchController
+    let isFindBarOpen: Bool
     let fontName: String
     let fontSize: Double
     let ansiColors: [UInt32]
@@ -68,6 +70,7 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
+        searchController.terminalView = terminal
         context.coordinator.appliedFontName = fontName
         context.coordinator.appliedFontSize = fontSize
         context.coordinator.appliedANSIColors = ansiColors
@@ -273,7 +276,10 @@ struct TerminalHostView: NSViewRepresentable {
         // right after picking a session in the sidebar — without stealing focus
         // while the user is already typing in it (skip when it is already first
         // responder).
-        if isFocused, isVisible, let window = nsView.window, window.firstResponder !== nsView {
+        // While the find bar owns keyboard focus, do not yank first responder
+        // back to the terminal; the normal re-render restores it on close.
+        if isFocused, isVisible, !isFindBarOpen,
+           let window = nsView.window, window.firstResponder !== nsView {
             window.makeFirstResponder(nsView)
         }
     }
