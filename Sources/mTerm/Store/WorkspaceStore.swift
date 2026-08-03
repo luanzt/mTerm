@@ -360,8 +360,11 @@ final class WorkspaceStore: ObservableObject {
             return
         }
 
-        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id),
-              let title = AgentSessionTitle.normalize(rawTitle),
+        let isClaude = claudeSessionIDs.contains(id)
+        guard isClaude || codexSessionIDs.contains(id),
+              let title = AgentSessionTitle.normalize(
+                rawTitle,
+                strippingLeadingDecoration: isClaude),
               agentSessionTitles[id] != title else {
             return
         }

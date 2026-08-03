@@ -29,16 +29,27 @@ enum AgentSessionTitle {
         }
     }
 
-    static func normalize(_ rawTitle: String) -> String? {
+    static func normalize(
+        _ rawTitle: String,
+        strippingLeadingDecoration: Bool = false
+    ) -> String? {
         guard !rawTitle.unicodeScalars.contains(where: {
             CharacterSet.controlCharacters.contains($0)
         }) else {
             return nil
         }
 
-        let collapsed = rawTitle
+        var collapsed = rawTitle
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
+        if strippingLeadingDecoration {
+            guard let firstContent = collapsed.firstIndex(where: {
+                $0.isLetter || $0.isNumber
+            }) else {
+                return nil
+            }
+            collapsed = String(collapsed[firstContent...])
+        }
         guard !collapsed.isEmpty,
               CodexThreadTitleResolver.threadID(from: collapsed) == nil,
               !isDecoratedGenericTitle(collapsed) else {

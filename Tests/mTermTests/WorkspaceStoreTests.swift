@@ -747,6 +747,18 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.displayTitle(for: session), session.title)
     }
 
+    func testClaudeTitleOmitsSpinnerDecoration() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "claude")
+        store.setAgentTitle(session.id, title: "✳ Refactor authentication")
+        XCTAssertEqual(store.displayTitle(for: session), "Refactor authentication")
+
+        store.setAgentTitle(session.id, title: "* Refactor authentication")
+        XCTAssertEqual(store.displayTitle(for: session), "Refactor authentication")
+    }
+
     func testAgentTitleUpdatesForResumeAndClearsOnNextCommand() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]

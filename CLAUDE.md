@@ -273,8 +273,11 @@ state; `Stop` finishes successful turns and `StopFailure` finishes API errors,
 including rate limits. After a trusted Claude permission, elicitation, or
 agent-needs-input notification, Return may also resume its state without a new
 top-level prompt. Codex starts the state from a plain Return in the TUI and clears
-it through its built-in attention event. Escape/Ctrl-C, returning to the shell,
-or closing the session also clears either agent's state. Modified Returns do not
+it through its built-in attention event. Slash commands and their follow-up
+menus (for example, choosing an entry after `/model`) remain local to the TUI
+and must not start the state; local-command suppression ends when Codex redraws
+its empty input prompt. Escape/Ctrl-C, returning to the shell, or closing the
+session also clears either agent's state. Modified Returns do not
 start the spinner; keyboard submission tracking requires the TUI's bracketed-
 paste input mode plus the existing foreground-transition grace period, so the
 shell Return that launches an agent is not treated as submitted work. Keep this

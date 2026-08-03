@@ -36,4 +36,18 @@ final class AgentSessionTitleTests: XCTestCase {
             AgentSessionTitle.normalize("Sửa tiêu đề phiên 🚀"),
             "Sửa tiêu đề phiên 🚀")
     }
+
+    func testStripsClaudeSpinnerDecorationFromConversationTitle() {
+        for title in [
+            "* Fix authentication flow",
+            "· Fix authentication flow",
+            "✳ Fix authentication flow",
+        ] {
+            XCTAssertEqual(
+                AgentSessionTitle.normalize(
+                    title,
+                    strippingLeadingDecoration: true),
+                "Fix authentication flow")
+        }
+    }
 }

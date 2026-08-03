@@ -83,6 +83,22 @@ final class TerminalKeyboardInputTests: XCTestCase {
             codexInputLine: "› please inspect /clear behavior"))
     }
 
+    func testCodexLocalCommandMenuSelectionDoesNotSubmitAgentInput() {
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 36,
+            modifierFlags: [],
+            foregroundCommand: "codex",
+            codexInputLine: "  › 1. gpt-5.6-sol",
+            isCodexLocalInteraction: true))
+    }
+
+    func testCodexIdlePromptEndsLocalCommandInteraction() {
+        XCTAssertTrue(TerminalKeyboardInput.isCodexIdlePrompt("│ ›   "))
+        XCTAssertTrue(TerminalKeyboardInput.isCodexIdlePrompt("  ›"))
+        XCTAssertFalse(TerminalKeyboardInput.isCodexIdlePrompt("› next prompt"))
+        XCTAssertFalse(TerminalKeyboardInput.isCodexIdlePrompt("› 1. gpt-5.6-sol"))
+    }
+
     func testReturnDoesNotSubmitOutsideAgentOrWithEditingModifiers() {
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,

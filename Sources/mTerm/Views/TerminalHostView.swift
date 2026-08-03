@@ -92,13 +92,28 @@ struct TerminalHostView: NSViewRepresentable {
                 return event
             }
             let foregroundCommand = context.coordinator.foregroundCommand
+            let codexInputLine = TerminalKeyboardInput.currentInputLine(
+                in: terminal.getTerminal())
+            if context.coordinator.isCodexLocalInteraction,
+               TerminalKeyboardInput.isCodexIdlePrompt(codexInputLine) {
+                context.coordinator.isCodexLocalInteraction = false
+            }
+            if TerminalKeyboardInput.isCodexLocalCommand(codexInputLine),
+               TerminalKeyboardInput.isPlainReturn(
+                keyCode: event.keyCode,
+                modifierFlags: event.modifierFlags) {
+                context.coordinator.isCodexLocalInteraction = true
+            }
+            if context.coordinator.isCodexLocalInteraction {
+                context.coordinator.scheduleCodexLocalInteractionCheck(in: terminal)
+            }
             if TerminalKeyboardInput.isAgentSubmission(
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags,
                 foregroundCommand: foregroundCommand,
                 isAgentInputMode: terminal.getTerminal().bracketedPasteMode,
-                codexInputLine: TerminalKeyboardInput.currentInputLine(
-                    in: terminal.getTerminal()),
+                codexInputLine: codexInputLine,
+                isCodexLocalInteraction: context.coordinator.isCodexLocalInteraction,
                 isClaudeResponseExpected: context.coordinator.isClaudeResponseExpected,
                 agentActivationUptime: context.coordinator.agentActivationUptime,
                 eventUptime: event.timestamp
@@ -111,6 +126,7 @@ struct TerminalHostView: NSViewRepresentable {
                 foregroundCommand: context.coordinator.foregroundCommand
             ) {
                 context.coordinator.isClaudeResponseExpected = false
+                context.coordinator.isCodexLocalInteraction = false
                 context.coordinator.onAgentWorkInterrupted()
             }
             guard let input = TerminalKeyboardInput.shiftEnter(
@@ -129,6 +145,7 @@ struct TerminalHostView: NSViewRepresentable {
             switch ShellIntegration.parse(payload) {
             case .run(let command):
                 context.coordinator.isClaudeResponseExpected = false
+                context.coordinator.isCodexLocalInteraction = false
                 if command == "claude" || command == "codex" {
                     context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
                 } else {
@@ -140,6 +157,7 @@ struct TerminalHostView: NSViewRepresentable {
                 context.coordinator.foregroundCommand = nil
                 context.coordinator.agentActivationUptime = nil
                 context.coordinator.isClaudeResponseExpected = false
+                context.coordinator.isCodexLocalInteraction = false
                 DispatchQueue.main.async { report(nil) }
             case nil:               break
             }
@@ -288,6 +306,7 @@ struct TerminalHostView: NSViewRepresentable {
         var foregroundCommand: String?
         var agentActivationUptime: TimeInterval?
         var isClaudeResponseExpected = false
+        var isCodexLocalInteraction = false
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
@@ -298,6 +317,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onFileDrop: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
+        private var pendingCodexLocalInteractionCheck: DispatchWorkItem?
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
             guard !didStartProcess,
@@ -370,6 +390,22 @@ struct TerminalHostView: NSViewRepresentable {
             pendingTitleUpdate?.cancel()
             pendingTitleUpdate = nil
         }
+
+        func scheduleCodexLocalInteractionCheck(in terminal: LocalProcessTerminalView) {
+            guard isCodexLocalInteraction else { return }
+            pendingCodexLocalInteractionCheck?.cancel()
+            let check = DispatchWorkItem { [weak self, weak terminal] in
+                guard let self, let terminal, isCodexLocalInteraction else { return }
+                let inputLine = TerminalKeyboardInput.currentInputLine(
+                    in: terminal.getTerminal())
+                if TerminalKeyboardInput.isCodexIdlePrompt(inputLine) {
+                    isCodexLocalInteraction = false
+                }
+                pendingCodexLocalInteractionCheck = nil
+            }
+            pendingCodexLocalInteractionCheck = check
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: check)
+        }
     }
 }
 
@@ -399,6 +435,7 @@ enum TerminalKeyboardInput {
         foregroundCommand: String?,
         isAgentInputMode: Bool = true,
         codexInputLine: String? = nil,
+        isCodexLocalInteraction: Bool = false,
         isClaudeResponseExpected: Bool = false,
         agentActivationUptime: TimeInterval? = nil,
         eventUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
@@ -412,8 +449,7 @@ enum TerminalKeyboardInput {
         // and therefore do not emit the completion notification that normally
         // clears the sidebar spinner.
         if foregroundCommand == "codex",
-           let codexInputLine,
-           isCodexLocalCommand(codexInputLine) {
+           (isCodexLocalInteraction || isCodexLocalCommand(codexInputLine)) {
             return false
         }
         // Require the input mode enabled by the TUI so the shell Return that
@@ -457,7 +493,16 @@ enum TerminalKeyboardInput {
         return text
     }
 
-    static func isCodexLocalCommand(_ inputLine: String) -> Bool {
+    static func isPlainReturn(
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        returnKeyCodes.contains(keyCode)
+            && modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty
+    }
+
+    static func isCodexLocalCommand(_ inputLine: String?) -> Bool {
+        guard let inputLine else { return false }
         guard let slash = inputLine.firstIndex(of: "/") else { return false }
         let prefix = inputLine[..<slash]
         guard !prefix.contains(where: { $0.isLetter || $0.isNumber }) else {
@@ -466,6 +511,17 @@ enum TerminalKeyboardInput {
         let commandStart = inputLine.index(after: slash)
         guard commandStart < inputLine.endIndex else { return false }
         return inputLine[commandStart].isLetter
+    }
+
+    static func isCodexIdlePrompt(_ inputLine: String?) -> Bool {
+        guard let inputLine,
+              let prompt = inputLine.firstIndex(of: "›") else { return false }
+        let prefix = inputLine[..<prompt]
+        guard prefix.allSatisfy({ $0.isWhitespace || $0 == "│" }) else {
+            return false
+        }
+        return inputLine[inputLine.index(after: prompt)...]
+            .allSatisfy(\.isWhitespace)
     }
 
     /// Claude and Codex both use Escape or Ctrl-C to interrupt an active turn.
