@@ -95,16 +95,12 @@ private struct WorkspaceSidebar: View {
                         }
                     }
                     sidebarSection("WORKSPACES", accessory: {
-                        Button {
+                        SidebarIconButton(
+                            systemName: "plus",
+                            help: "Add a workspace folder"
+                        ) {
                             workspace.chooseWorkspace()
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(MTermTheme.dim)
-                                .frame(width: 20, height: 20)
                         }
-                        .buttonStyle(.borderless)
-                        .help("Add a workspace folder")
                     }) {
                         ForEach(workspace.workspaces) { folder in
                             let children = workspace.sessions.filter { $0.workspaceID == folder.id }
@@ -242,18 +238,14 @@ private struct WorkspaceFolderRow: View {
                     .padding(.horizontal, 4)
                     .background(Circle().fill(MTermTheme.accent.opacity(0.16)))
             }
-            Button {
+            SidebarIconButton(
+                systemName: "plus",
+                help: "Open terminal in \(folder.name)"
+            ) {
                 workspace.createSession(in: folder, asNewPane:
                     settings.opensNewTerminalsInSplit
                         || NSEvent.modifierFlags.contains(.command))
-            } label: {
-                Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(MTermTheme.dim)
-                    .frame(width: 22, height: 22)
             }
-            .buttonStyle(.borderless)
-            .help("Open terminal in \(folder.name)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -457,16 +449,13 @@ private struct SessionSidebarRow: View {
                     .frame(width: 16, height: 16)
                     .accessibilityLabel("Agent is working")
             }
-            Button {
+            SidebarIconButton(
+                systemName: "xmark",
+                help: "Close \(displayTitle)",
+                hoverColor: MTermTheme.danger
+            ) {
                 workspace.close(session)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(MTermTheme.dim2)
-                    .frame(width: 20, height: 20)
             }
-            .buttonStyle(.borderless)
-            .help("Close \(displayTitle)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -629,6 +618,33 @@ private struct SessionReorderDropDelegate: DropDelegate {
             return
         }
         dropTarget = SessionDropTarget(id: targetID, after: info.location.y > rowHeight / 2)
+    }
+}
+
+/// Compact sidebar actions share a visible hit target and brighten on hover so
+/// dim plus/close glyphs still read as interactive controls.
+private struct SidebarIconButton: View {
+    let systemName: String
+    let help: String
+    var hoverColor: Color = MTermTheme.accent
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isHovering ? hoverColor : MTermTheme.dim2)
+                .frame(width: 22, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(isHovering ? MTermTheme.rowHover : .clear))
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.1), value: isHovering)
     }
 }
 
