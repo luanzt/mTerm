@@ -1061,11 +1061,6 @@ private struct TerminalPane: View {
                              help: "Hide this pane (keep the session)") {
                 workspace.hide(session)
             }
-            PaneHeaderButton(icon: "xmark",
-                             help: "Close session",
-                             danger: true) {
-                workspace.close(session)
-            }
         }
         .padding(.leading, 11)
         .padding(.trailing, 8)
@@ -1132,18 +1127,17 @@ private struct PaneShortcutBadge: View {
 private struct PaneHeaderButton: View {
     let icon: String
     let help: String
-    var danger = false
     let action: () -> Void
     @State private var isHovering = false
 
     private var tint: Color {
         guard isHovering else { return MTermTheme.dim }
-        return danger ? MTermTheme.danger : MTermTheme.accent
+        return MTermTheme.accent
     }
 
     private var fill: Color {
         guard isHovering else { return .clear }
-        return danger ? MTermTheme.danger.opacity(0.16) : Color.white.opacity(0.09)
+        return Color.white.opacity(0.09)
     }
 
     var body: some View {

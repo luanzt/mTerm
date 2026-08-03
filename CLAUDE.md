@@ -57,10 +57,13 @@ Single `@MainActor ObservableObject`, the source of truth for everything:
 All mutations (create/close/hide/place/maximize/resize) go through it. Only
 `workspaces` is persisted (UserDefaults); sessions are intentionally not.
 `savedGrid` backs maximize↔restore and is cleared by any structural grid change.
-Keyboard creation commands explicitly target `selectedSessionID`; sidebar
-actions remain hover-aware. A normal sidebar click replaces the hover-aware
-active pane; Command-click adds a hidden session as a split, or focuses it if it
-is already visible, retaining the normal six-pane fallback when the grid is full.
+Keyboard creation commands explicitly target `selectedSessionID`. A normal
+sidebar session click replaces the focused pane; it must not use the last-hovered
+pane because that hover becomes stale after the pointer enters the sidebar.
+Command-click adds a hidden session as a split, or focuses it if it is already
+visible, retaining the normal six-pane fallback when the grid is full. Sidebar
+creation actions also replace the focused pane; stale hover state must not
+override an explicit pane selection.
 `renameSession` is the only user-title mutation path. A manually renamed stable
 title is shared by the sidebar, pane header, and notification subtitle, and takes
 precedence over later transient Claude/Codex OSC titles for that session.
@@ -105,7 +108,9 @@ to right, then panes from top to bottom within each column. Both
 that same array. Visible pane headers show the matching `⌘N` badge immediately
 to the left of the maximize/restore button; hidden sessions have no shortcut.
 Keep the badge and header buttons horizontally fixed so a long agent title can
-truncate without collapsing those controls.
+truncate without collapsing those controls. Pane headers provide maximize and
+hide controls only; closing a terminal is intentionally available from its
+sidebar row instead.
 
 Visible panes can be dragged only from their identity area in the header; pane
 drag is disabled while maximized. A center drop swaps the two visual slots,

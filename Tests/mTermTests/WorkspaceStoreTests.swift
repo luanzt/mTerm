@@ -114,31 +114,33 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.selectedSessionID, a)
     }
 
-    func testOpenInActivePaneReplacesHoveredPaneWithoutCollapsing() {
+    func testOpenInActivePaneReplacesFocusedPaneEvenWhenHoverIsStale() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let a = store.sessions[0].id
         store.createSession()
         let b = store.sessions[1].id
         store.createSession()
         let c = store.sessions[2].id
-        // Build two columns: [b][c]
-        store.openSingle(b)
+        store.createSession()
+        let hidden = store.sessions[3].id
+        // Build three columns: [a][b][c], then explicitly focus pane 3 while a
+        // stale hover value still points at pane 1.
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)
         store.place(c, onPaneWith: b, zone: .right)
-        XCTAssertEqual(store.grid.columns.count, 2)
+        XCTAssertEqual(store.grid.columns.count, 3)
 
-        // Hover the left column (b) and open background session a from the sidebar.
-        store.hoveredSessionID = b
-        store.openInActivePane(a)
+        store.hoveredSessionID = a
+        store.focusGridPane(at: 2)
+        store.openInActivePane(hidden)
 
-        XCTAssertEqual(store.grid.columns.count, 2)          // did not collapse to single view
-        XCTAssertTrue(store.grid.paneIDs.contains(a))        // a replaced b in the hovered pane
-        XCTAssertTrue(store.grid.paneIDs.contains(c))        // other pane untouched
-        XCTAssertFalse(store.grid.paneIDs.contains(b))
-        XCTAssertEqual(store.grid.columns[0].panes, [a])     // left column now shows a
-        XCTAssertEqual(store.selectedSessionID, a)
+        XCTAssertEqual(store.grid.columns.count, 3)
+        XCTAssertEqual(store.grid.paneIDs, [a, b, hidden])
+        XCTAssertFalse(store.grid.paneIDs.contains(c))
+        XCTAssertEqual(store.selectedSessionID, hidden)
     }
 
-    func testCreateSessionReplacesActivePaneNotSingleView() {
+    func testCreateSessionReplacesFocusedPaneNotStaleHoveredPane() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let a = store.sessions[0].id
         store.createSession()
@@ -146,14 +148,36 @@ final class WorkspaceStoreTests: XCTestCase {
         store.openSingle(a)
         store.place(b, onPaneWith: a, zone: .right)          // [a][b]
         store.hoveredSessionID = a
+        store.focusGridPane(at: 1)
 
-        store.createSession()                                // new terminal into hovered pane
+        store.createSession()
         let created = store.selectedSessionID
 
-        XCTAssertEqual(store.grid.columns.count, 2)          // still two panes
-        XCTAssertTrue(store.grid.paneIDs.contains(b))        // other pane kept
-        XCTAssertFalse(store.grid.paneIDs.contains(a))       // a replaced by the new terminal
-        XCTAssertEqual(store.grid.columns[0].panes, [created!])
+        XCTAssertEqual(store.grid.columns.count, 2)
+        XCTAssertTrue(store.grid.paneIDs.contains(a))
+        XCTAssertFalse(store.grid.paneIDs.contains(b))
+        XCTAssertEqual(store.grid.columns[1].panes, [created!])
+    }
+
+    func testCreateWorkspaceSessionReplacesFocusedThirdPaneNotStaleHoveredPane() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        let a = store.sessions[0].id
+        store.createSession(asNewPane: true)
+        let b = store.sessions[1].id
+        store.createSession(asNewPane: true)
+        let c = store.sessions[2].id
+        XCTAssertEqual(store.grid.paneIDs, [a, b, c])
+
+        store.hoveredSessionID = a
+        store.focusGridPane(at: 2)
+        store.createSession(in: folder)
+
+        let created = store.sessions.last!
+        XCTAssertEqual(created.workspaceID, folder.id)
+        XCTAssertEqual(store.grid.paneIDs, [a, b, created.id])
+        XCTAssertFalse(store.grid.paneIDs.contains(c))
+        XCTAssertEqual(store.selectedSessionID, created.id)
     }
 
     func testOpenInActivePaneFocusesAlreadyVisibleSession() {

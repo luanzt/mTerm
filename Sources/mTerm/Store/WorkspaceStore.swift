@@ -85,7 +85,7 @@ final class WorkspaceStore: ObservableObject {
 
     func createSession(asNewPane: Bool = false) {
         let session = makeSession()
-        addSession(session, asNewPane: asNewPane, replacingPane: activePaneSessionID)
+        addSession(session, asNewPane: asNewPane, replacingPane: focusedPaneSessionID)
     }
 
     /// ⌘N / ⇧⌘N: create an ungrouped terminal in OPEN SESSIONS. Keyboard
@@ -216,7 +216,7 @@ final class WorkspaceStore: ObservableObject {
 
     func createSession(in workspace: WorkspaceFolder, asNewPane: Bool = false) {
         let session = makeSession(workingDirectory: workspace.path, workspaceID: workspace.id)
-        addSession(session, asNewPane: asNewPane, replacingPane: activePaneSessionID)
+        addSession(session, asNewPane: asNewPane, replacingPane: focusedPaneSessionID)
     }
 
     /// Creates a fresh shell beside an existing terminal, inheriting its live
@@ -592,13 +592,6 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    /// Show `id` in the active pane (the pane under the cursor), replacing whatever
-    /// it currently shows — instead of collapsing to a single view. Falls back to a
-    /// single-pane view when the grid is empty.
-    private func showInActivePane(_ id: SessionRecord.ID) {
-        show(id, inPaneWith: activePaneSessionID)
-    }
-
     private func show(_ id: SessionRecord.ID,
                       inPaneWith target: SessionRecord.ID?) {
         guard sessions.contains(where: { $0.id == id }) else { return }
@@ -633,10 +626,12 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    /// Sidebar tap: open `id` in the pane under the cursor without leaving the
-    /// current multi-pane layout.
+    /// Sidebar tap: open `id` in the focused pane without leaving the current
+    /// multi-pane layout. Do not use the hover target here: once the pointer has
+    /// moved into the sidebar, that value only describes a previously hovered
+    /// pane and can disagree with the user's explicit focus selection.
     func openInActivePane(_ id: SessionRecord.ID) {
-        showInActivePane(id)
+        show(id, inPaneWith: focusedPaneSessionID)
     }
 
     /// Sidebar Command-click: add a hidden session as another pane, or only
