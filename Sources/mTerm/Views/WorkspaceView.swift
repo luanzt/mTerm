@@ -1068,18 +1068,22 @@ private struct TerminalPane: View {
         }
     }
 
+    @ViewBuilder
     private var header: some View {
-        HStack(spacing: 8) {
-            Group {
-                if workspace.isMaximized {
-                    paneIdentity
-                } else {
-                    paneIdentity.onDrag {
-                        workspace.beginDraggingPane(session.id)
-                        return NSItemProvider(object: session.id.uuidString as NSString)
-                    }
+        if workspace.isMaximized {
+            headerContent
+        } else {
+            headerContent
+                .onDrag {
+                    workspace.beginDraggingPane(session.id)
+                    return NSItemProvider(object: session.id.uuidString as NSString)
                 }
-            }
+        }
+    }
+
+    private var headerContent: some View {
+        HStack(spacing: 8) {
+            paneIdentity
             .layoutPriority(1)
             Spacer(minLength: 6)
             if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
