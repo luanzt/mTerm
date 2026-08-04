@@ -10,6 +10,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     private let terminalProcesses = TerminalProcessRegistry()
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
+    private var keyDownMonitor: Any?
     private lazy var agentNotifications = AgentNotificationCoordinator()
     private var cancellables: Set<AnyCancellable> = []
     private lazy var updaterController = SPUStandardUpdaterController(
@@ -37,6 +38,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
+        installApplicationShortcuts()
         let content = WorkspaceView()
             .environmentObject(workspace)
             .environmentObject(settings)
@@ -90,6 +92,10 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+            self.keyDownMonitor = nil
+        }
         terminalProcesses.terminateAll(force: true)
         // Release every SwiftTerm view so its PTY descriptors and observers are
         // dismantled before the process exits.
@@ -112,6 +118,21 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleFocusedPaneMaximize(_ sender: Any?) {
         workspace.toggleFocusedPaneMaximize()
+    }
+
+    /// SwiftTerm treats Option as Meta and consumes Option-letter key events
+    /// before AppKit can dispatch an Option-only menu equivalent. Handle this
+    /// application shortcut ahead of the focused terminal while leaving every
+    /// other Option combination available to the shell.
+    private func installApplicationShortcuts() {
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            guard ApplicationKeyboardShortcut.isTogglePaneMaximize(event) else {
+                return event
+            }
+            self?.workspace.toggleFocusedPaneMaximize()
+            return nil
+        }
     }
 
     @objc private func createOpenSession(_ sender: NSMenuItem) {
@@ -328,5 +349,16 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: menu.title, action: nil, keyEquivalent: "")
         item.submenu = menu
         mainMenu.addItem(item)
+    }
+}
+
+enum ApplicationKeyboardShortcut {
+    /// Hardware key code 3 is the ANSI F key. Matching the physical key keeps
+    /// the shortcut stable when Option changes the produced character (for
+    /// example, Option-F produces ƒ on the U.S. keyboard layout).
+    static func isTogglePaneMaximize(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags
+            .intersection([.command, .control, .option, .shift])
+        return event.keyCode == 3 && modifiers == .option
     }
 }
