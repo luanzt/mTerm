@@ -1097,7 +1097,8 @@ private struct TerminalPane: View {
     private var headerContent: some View {
         HStack(spacing: 8) {
             paneIdentity
-            .layoutPriority(1)
+                .layoutPriority(1)
+            Spacer(minLength: 6)
             if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
                 PaneShortcutBadge(number: shortcutNumber)
             }
