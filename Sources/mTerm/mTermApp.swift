@@ -110,6 +110,10 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         workspace.focusGridPane(at: sender.tag)
     }
 
+    @objc private func toggleFocusedPaneMaximize(_ sender: Any?) {
+        workspace.toggleFocusedPaneMaximize()
+    }
+
     @objc private func createOpenSession(_ sender: NSMenuItem) {
         workspace.createOpenSessionFromFocusedPane(
             asNewPane: sender.keyEquivalentModifierMask.contains(.shift)
@@ -275,8 +279,17 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         viewMenu.addItem(toggleSidebarItem)
         addSubmenu(viewMenu, to: mainMenu)
 
-        // Panes — quick-switch ⌘1…⌘6 to the Nth pane in the grid (max 6 panes).
+        // Panes — maximize/restore the focused pane with ⌥F, or quick-switch
+        // with ⌘1…⌘6 to the Nth pane in the grid (max 6 panes).
         let panesMenu = NSMenu(title: "Panes")
+        let toggleMaximizeItem = NSMenuItem(
+            title: "Toggle Pane Maximize",
+            action: #selector(toggleFocusedPaneMaximize(_:)),
+            keyEquivalent: "f")
+        toggleMaximizeItem.keyEquivalentModifierMask = .option
+        toggleMaximizeItem.target = self
+        panesMenu.addItem(toggleMaximizeItem)
+        panesMenu.addItem(.separator())
         for n in 1...6 {
             let item = NSMenuItem(title: "Pane \(n)",
                                   action: #selector(focusPane(_:)),

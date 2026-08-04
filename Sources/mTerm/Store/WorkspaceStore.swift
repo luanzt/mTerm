@@ -571,6 +571,13 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    /// Keyboard maximize/restore targets the focused visible pane, matching the
+    /// pane used by the other keyboard-driven workspace actions.
+    func toggleFocusedPaneMaximize() {
+        guard let id = focusedPaneSessionID else { return }
+        toggleMaximize(id)
+    }
+
     private func restoreFromMaximize() {
         guard var restored = savedGrid else { return }
         savedGrid = nil

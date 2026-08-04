@@ -422,6 +422,27 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.grid.paneIDs, [a])
     }
 
+    func testToggleFocusedPaneMaximizeCollapsesThenRestoresLayout() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let a = store.sessions[0].id
+        store.createSession()
+        let b = store.sessions[1].id
+        store.openSingle(a)
+        store.place(b, onPaneWith: a, zone: .right)
+        store.focusGridPane(at: 1)
+        let twoColumn = store.grid
+
+        store.toggleFocusedPaneMaximize()
+        XCTAssertTrue(store.isMaximized)
+        XCTAssertEqual(store.grid.paneIDs, [b])
+        XCTAssertEqual(store.selectedSessionID, b)
+
+        store.toggleFocusedPaneMaximize()
+        XCTAssertFalse(store.isMaximized)
+        XCTAssertEqual(store.grid, twoColumn)
+        XCTAssertEqual(store.selectedSessionID, b)
+    }
+
     // MARK: moveSession
 
     func testMoveSessionReordersWithinOpenSessions() {

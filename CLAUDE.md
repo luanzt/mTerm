@@ -45,6 +45,8 @@ The manual menu currently owns these app-wide commands:
 - Edit ▸ Copy / Paste — ⌘C / ⌘V route through the responder chain. There is no
   Select All shortcut.
 - View ▸ Toggle Sidebar — ⌘B.
+- Panes ▸ Toggle Pane Maximize — ⌥F maximizes the focused pane or restores
+  its previous layout.
 - Panes ▸ Pane 1…6 — ⌘1…⌘6, in the same visual order as `grid.paneIDs`.
 
 - `hosting.sizingOptions = []` is deliberate: without it, each SwiftTerm view's

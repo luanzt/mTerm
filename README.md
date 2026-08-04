@@ -70,6 +70,7 @@ so you can see several shells at once.
 | **⌘T**   | Create a terminal in the focused session's workspace, replacing that pane |
 | **⇧⌘T**  | Create a terminal in that workspace in another pane; replace the focused pane if all 6 are occupied |
 | **⌘B**   | Toggle the sidebar (also **View ▸ Toggle Sidebar**, or the titlebar button) |
+| **⌥F**   | Maximize the focused pane, or restore its previous layout |
 | **⌘1…⌘6** | Focus the corresponding visible pane |
 
 > Hidden sessions keep running. A shell parked out of the visible grid is **not**
