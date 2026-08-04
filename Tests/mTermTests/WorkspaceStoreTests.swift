@@ -885,4 +885,51 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.isMaximized)
         XCTAssertEqual(store.grid.paneIDs, [a])
     }
+
+    func testShowFindTargetsSelectedSession() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = WorkspaceStore(defaults: defaults)
+        let selected = store.selectedSessionID
+
+        store.showFind()
+
+        XCTAssertNotNil(selected)
+        XCTAssertEqual(store.findSessionID, selected)
+    }
+
+    func testCloseFindClearsOnlyMatchingSession() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = WorkspaceStore(defaults: defaults)
+        store.showFind()
+        let target = try XCTUnwrap(store.findSessionID)
+
+        store.closeFind(SessionRecord.shell().id)   // some other id
+        XCTAssertEqual(store.findSessionID, target)
+
+        store.closeFind(target)
+        XCTAssertNil(store.findSessionID)
+    }
+
+    func testClosingFindTargetSessionClearsFindSessionID() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = WorkspaceStore(defaults: defaults)
+        let session = store.sessions[0]
+        store.showFind()
+        XCTAssertEqual(store.findSessionID, session.id)
+
+        store.close(session)
+
+        XCTAssertNil(store.findSessionID)
+    }
+
+    func testHidingFindTargetSessionClearsFindSessionID() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = WorkspaceStore(defaults: defaults)
+        let session = store.sessions[0]
+        store.showFind()
+
+        store.hide(session)
+
+        XCTAssertNil(store.findSessionID)
+    }
 }

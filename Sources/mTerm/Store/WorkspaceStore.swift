@@ -20,6 +20,10 @@ final class WorkspaceStore: ObservableObject {
     /// Session shown in the pane the cursor most recently hovered. Used as the
     /// target pane when opening a session or creating a terminal from the sidebar.
     @Published var hoveredSessionID: SessionRecord.ID?
+    /// The pane whose find bar is currently shown, or nil when no find bar is
+    /// open. Set by ⌘F (`showFind`), cleared by Esc/close (`closeFind`) and by
+    /// closing/hiding the target pane.
+    @Published var findSessionID: SessionRecord.ID?
     /// Sessions whose pane currently has `claude` as its foreground command,
     /// reported via shell integration (see `setForeground`). Drives the agent
     /// icon swap in the sidebar and pane header.
@@ -240,6 +244,7 @@ final class WorkspaceStore: ObservableObject {
         agentWorkingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
+        if findSessionID == session.id { findSessionID = nil }
         cancelCodexTitleResolution(for: session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
@@ -266,6 +271,18 @@ final class WorkspaceStore: ObservableObject {
         if let selected = selectedSessionID, !grid.paneIDs.contains(selected) {
             selectedSessionID = grid.paneIDs.first ?? selectedSessionID
         }
+        if findSessionID == session.id { findSessionID = nil }
+    }
+
+    /// Opens the find bar on the focused pane. A no-op when nothing is selected.
+    func showFind() {
+        guard let selectedSessionID else { return }
+        findSessionID = selectedSessionID
+    }
+
+    /// Closes the find bar for `id` (ignored if a different pane owns it).
+    func closeFind(_ id: SessionRecord.ID) {
+        if findSessionID == id { findSessionID = nil }
     }
 
     /// Reorder a session relative to another **within the same section** (both

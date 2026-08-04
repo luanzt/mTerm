@@ -971,6 +971,7 @@ private struct TerminalPane: View {
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
+    @StateObject private var searchController = TerminalSearchController()
 
     var body: some View {
         GeometryReader { proxy in
@@ -983,6 +984,8 @@ private struct TerminalPane: View {
                 TerminalHostView(session: session,
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
+                                 searchController: searchController,
+                                 isFindBarOpen: workspace.findSessionID == session.id,
                                  fontName: settings.terminalFontName,
                                  fontSize: settings.terminalFontSize,
                                  ansiColors: settings.ansiColors,
@@ -1018,6 +1021,16 @@ private struct TerminalPane: View {
                                  })
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
+                    .overlay(alignment: .topTrailing) {
+                        if workspace.findSessionID == session.id {
+                            TerminalFindBar(controller: searchController) {
+                                searchController.clear()
+                                workspace.closeFind(session.id)
+                            }
+                            .padding(.top, 8)
+                            .padding(.trailing, 14)
+                        }
+                    }
             }
             // Header titles and AppKit-backed terminal views may both advertise
             // a wide intrinsic size. Keep the pane locked to the non-animated
@@ -1085,7 +1098,6 @@ private struct TerminalPane: View {
         HStack(spacing: 8) {
             paneIdentity
             .layoutPriority(1)
-            Spacer(minLength: 6)
             if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
                 PaneShortcutBadge(number: shortcutNumber)
             }

@@ -102,6 +102,10 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         workspace.toggleSidebar()
     }
 
+    @objc private func showFindBar(_ sender: Any?) {
+        workspace.showFind()
+    }
+
     @objc private func focusPane(_ sender: NSMenuItem) {
         workspace.focusGridPane(at: sender.tag)
     }
@@ -250,6 +254,14 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(menuItem("Copy", #selector(NSText.copy(_:)), "c"))
         editMenu.addItem(menuItem("Paste", #selector(NSText.paste(_:)), "v"))
+        editMenu.addItem(.separator())
+        let findItem = NSMenuItem(
+            title: "Find…",
+            action: #selector(showFindBar(_:)),
+            keyEquivalent: "f")
+        findItem.keyEquivalentModifierMask = .command
+        findItem.target = self
+        editMenu.addItem(findItem)
         addSubmenu(editMenu, to: mainMenu)
 
         // View — Toggle Sidebar (⌘B).
