@@ -113,11 +113,13 @@ truncate without collapsing those controls. Pane headers provide maximize and
 hide controls only; closing a terminal is intentionally available from its
 sidebar row instead.
 
-Visible panes can be dragged only from their identity area in the header; pane
-drag is disabled while maximized. A center drop swaps the two visual slots,
-while edge drops move the source beside/above/below the target without hiding a
-session. Capacity checks run after hypothetically removing the source, allowing
-same-column row reorder and reuse of a column freed at the three-column limit.
+Visible panes can be dragged from anywhere in their header, including its empty
+space and controls; ordinary clicks on header controls still perform their
+actions. Pane drag is disabled while maximized. A center drop swaps the two
+visual slots, while edge drops move the source beside/above/below the target
+without hiding a session. Capacity checks run after hypothetically removing the
+source, allowing same-column row reorder and reuse of a column freed at the
+three-column limit.
 Unavailable edges are excluded from hit-testing so the remaining target area
 falls back to a stable center swap rather than silently cancelling the drop. New
 row moves reset that column to 50/50. Keep this pane-move state distinct from

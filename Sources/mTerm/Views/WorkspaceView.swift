@@ -1081,18 +1081,22 @@ private struct TerminalPane: View {
         }
     }
 
+    @ViewBuilder
     private var header: some View {
-        HStack(spacing: 8) {
-            Group {
-                if workspace.isMaximized {
-                    headerDragRegion
-                } else {
-                    headerDragRegion.onDrag {
-                        workspace.beginDraggingPane(session.id)
-                        return NSItemProvider(object: session.id.uuidString as NSString)
-                    }
+        if workspace.isMaximized {
+            headerContent
+        } else {
+            headerContent
+                .onDrag {
+                    workspace.beginDraggingPane(session.id)
+                    return NSItemProvider(object: session.id.uuidString as NSString)
                 }
-            }
+        }
+    }
+
+    private var headerContent: some View {
+        HStack(spacing: 8) {
+            paneIdentity
             .layoutPriority(1)
             if let shortcutNumber = workspace.shortcutNumber(for: session.id) {
                 PaneShortcutBadge(number: shortcutNumber)
@@ -1118,14 +1122,6 @@ private struct TerminalPane: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(MTermTheme.border).frame(height: 1)
         }
-    }
-
-    private var headerDragRegion: some View {
-        HStack(spacing: 0) {
-            paneIdentity
-            Spacer(minLength: 6)
-        }
-        .contentShape(Rectangle())
     }
 
     private var paneIdentity: some View {
