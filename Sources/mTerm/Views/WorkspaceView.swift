@@ -1019,6 +1019,12 @@ private struct TerminalPane: View {
                                  onProcessTeardown: {
                                      terminalProcesses.terminate(session.id)
                                  })
+                    // NSViewRepresentable keeps the AppKit view's current
+                    // fitting width as its ideal size. When a neighboring pane
+                    // disappears, make the terminal consume the newly available
+                    // body space so SwiftTerm receives the wider frame and sends
+                    // the corresponding PTY resize.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
                     .overlay(alignment: .topTrailing) {

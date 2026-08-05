@@ -144,9 +144,11 @@ constraints learned the hard way:
   makes the shell reprint its prompt repeatedly. Do not add `.animation` around
   pane frames.
 - Keep `TerminalPane` explicitly constrained to the `GeometryReader` size and
-  keep its conversation title compressible/truncated. Agent titles can be much
-  wider than a split pane; allowing either the title or SwiftTerm's intrinsic
-  width to win makes the next pane appear to overlap the existing one.
+  make the `TerminalHostView` fill the pane body before applying its padding.
+  Keep the conversation title compressible/truncated. Agent titles and the
+  AppKit-backed terminal can both advertise stale intrinsic widths; allowing
+  either to win prevents a pane from contracting for a split or expanding after
+  its neighbor is hidden.
 
 ### Terminal bridge: `TerminalHostView.swift`
 
