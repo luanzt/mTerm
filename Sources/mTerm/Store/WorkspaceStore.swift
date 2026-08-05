@@ -3,6 +3,15 @@ import Combine
 import CoreGraphics
 import Foundation
 
+extension Notification.Name {
+    /// Posted when a pane-divider drag begins. Terminals start deferring child PTY
+    /// winsize updates so the drag does not storm the shell with SIGWINCH.
+    static let mtermPaneResizeBegan = Notification.Name("mterm.paneResizeBegan")
+    /// Posted when a pane-divider drag ends. Terminals flush the final deferred
+    /// winsize to their child exactly once.
+    static let mtermPaneResizeEnded = Notification.Name("mterm.paneResizeEnded")
+}
+
 @MainActor
 final class WorkspaceStore: ObservableObject {
     typealias CodexTitleLookup = @Sendable (UUID) async -> String?
@@ -17,6 +26,12 @@ final class WorkspaceStore: ObservableObject {
     @Published var draggedWorkspaceID: WorkspaceFolder.ID?
     @Published var isSidebarVisible = true
     @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
+    /// True while the user is dragging a pane divider. Deliberately NOT
+    /// `@Published`: terminals defer the child PTY winsize via a NotificationCenter
+    /// event (see `beginPaneResize`/`endPaneResize`) rather than a SwiftUI binding,
+    /// so mutating it mid-drag cannot feed back into pane layout and trip a SwiftUI
+    /// AttributeGraph cycle. It only gates the begin/end transitions.
+    private(set) var isResizingPanes = false
     /// Session shown in the pane the cursor most recently hovered. Used as the
     /// target pane when opening a session or creating a terminal from the sidebar.
     @Published var hoveredSessionID: SessionRecord.ID?
@@ -714,6 +729,27 @@ final class WorkspaceStore: ObservableObject {
 
     func resizeRow(columnIndex index: Int, topFraction fraction: CGFloat) {
         grid.resizeRow(columnIndex: index, topFraction: fraction)
+    }
+
+    /// Marks the start of a divider drag. Posts a synchronous notification so each
+    /// terminal turns on `defersProcessWindowSizeUpdates` before the first frame
+    /// changes, and returns `true` only on the transition into the resizing state
+    /// so the caller can skip that first event's resize (belt-and-suspenders
+    /// against a leaked intermediate SIGWINCH).
+    @discardableResult
+    func beginPaneResize() -> Bool {
+        guard !isResizingPanes else { return false }
+        isResizingPanes = true
+        NotificationCenter.default.post(name: .mtermPaneResizeBegan, object: nil)
+        return true
+    }
+
+    /// Marks the end of a divider drag. The notification lets each terminal flush
+    /// the final deferred winsize to its child exactly once.
+    func endPaneResize() {
+        guard isResizingPanes else { return }
+        isResizingPanes = false
+        NotificationCenter.default.post(name: .mtermPaneResizeEnded, object: nil)
     }
 
     private func persist() {

@@ -87,6 +87,12 @@ struct TerminalHostView: NSViewRepresentable {
             }
         }
         terminal.processDelegate = context.coordinator
+        // Defer the child PTY winsize while a pane divider is being dragged, then
+        // flush the final size once on release. Driven by NotificationCenter (not
+        // a SwiftUI binding) so toggling it mid-drag never feeds back into pane
+        // layout and trips a SwiftUI AttributeGraph cycle. Window live-resize is
+        // handled directly on the view (see FileDroppableTerminalView).
+        context.coordinator.observePaneResize(for: terminal)
         context.coordinator.keyDownMonitor = NSEvent.addLocalMonitorForEvents(
             matching: .keyDown
         ) { [weak terminal] event in
@@ -155,13 +161,25 @@ struct TerminalHostView: NSViewRepresentable {
                     context.coordinator.agentActivationUptime = nil
                 }
                 context.coordinator.foregroundCommand = command
-                DispatchQueue.main.async { report(command) }
+                DispatchQueue.main.async {
+                    // Rewrap normal-buffer output while a foreground program owns
+                    // the pane (e.g. Metro/yarn logs) so shrinking then widening
+                    // does not leave lines clipped. The shell prompt keeps reflow
+                    // off (`.idle`) so powerlevel10k does not duplicate its prompt
+                    // on resize; alt-screen TUIs are unaffected because their
+                    // buffer has no scrollback (reflow stays disabled there).
+                    context.coordinator.terminal?.getTerminal().reflowOnResize = true
+                    report(command)
+                }
             case .idle:
                 context.coordinator.foregroundCommand = nil
                 context.coordinator.agentActivationUptime = nil
                 context.coordinator.isClaudeResponseExpected = false
                 context.coordinator.isCodexLocalInteraction = false
-                DispatchQueue.main.async { report(nil) }
+                DispatchQueue.main.async {
+                    context.coordinator.terminal?.getTerminal().reflowOnResize = false
+                    report(nil)
+                }
             case nil:               break
             }
         }
@@ -291,6 +309,10 @@ struct TerminalHostView: NSViewRepresentable {
             NotificationCenter.default.removeObserver(observer)
             coordinator.frameObserver = nil
         }
+        coordinator.paneResizeObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+        coordinator.paneResizeObservers = []
         if let monitor = coordinator.keyDownMonitor {
             NSEvent.removeMonitor(monitor)
             coordinator.keyDownMonitor = nil
@@ -316,6 +338,7 @@ struct TerminalHostView: NSViewRepresentable {
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
+        var paneResizeObservers: [NSObjectProtocol] = []
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         var onAgentInputSubmitted: () -> Void = {}
@@ -330,6 +353,26 @@ struct TerminalHostView: NSViewRepresentable {
                   terminal.frame.width > 1, terminal.frame.height > 1 else { return }
             didStartProcess = true
             startShell?(terminal)
+        }
+
+        /// Subscribe this terminal to pane-divider drag notifications so it defers
+        /// child PTY winsize updates for the duration of the drag and flushes the
+        /// final size once on release.
+        func observePaneResize(for terminal: LocalProcessTerminalView) {
+            // queue: nil delivers synchronously on the posting (main) thread, so
+            // deferral is armed before the drag's first resize reaches the PTY.
+            let center = NotificationCenter.default
+            let began = center.addObserver(
+                forName: .mtermPaneResizeBegan, object: nil, queue: nil
+            ) { [weak terminal] _ in
+                terminal?.defersProcessWindowSizeUpdates = true
+            }
+            let ended = center.addObserver(
+                forName: .mtermPaneResizeEnded, object: nil, queue: nil
+            ) { [weak terminal] _ in
+                terminal?.defersProcessWindowSizeUpdates = false
+            }
+            paneResizeObservers = [began, ended]
         }
 
         func sizeChanged(
@@ -564,6 +607,18 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         registerForDraggedTypes([.fileURL])
+    }
+
+    /// Coalesce the child PTY winsize during a window live-resize the same way a
+    /// pane-divider drag does: hold intermediate sizes, flush the final one on end.
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        defersProcessWindowSizeUpdates = true
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        defersProcessWindowSizeUpdates = false
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

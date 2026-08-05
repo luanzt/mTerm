@@ -953,4 +953,21 @@ final class WorkspaceStoreTests: XCTestCase {
 
         XCTAssertNil(store.findSessionID)
     }
+
+    func testPaneResizeStateTogglesAndIsIdempotent() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let store = WorkspaceStore(defaults: defaults)
+
+        XCTAssertFalse(store.isResizingPanes)
+
+        // The first drag event primes deferral; subsequent events keep it on so
+        // panes only stop deferring the child PTY resize once the drag ends.
+        XCTAssertTrue(store.beginPaneResize(), "first begin should report a fresh drag")
+        XCTAssertTrue(store.isResizingPanes)
+        XCTAssertFalse(store.beginPaneResize(), "subsequent begins are no-ops")
+        XCTAssertTrue(store.isResizingPanes)
+
+        store.endPaneResize()
+        XCTAssertFalse(store.isResizingPanes)
+    }
 }

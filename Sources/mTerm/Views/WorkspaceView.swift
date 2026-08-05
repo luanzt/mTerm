@@ -898,13 +898,19 @@ private struct TerminalDeck: View {
             ResizeHandle(orientation: .vertical, inset: gutter / 2)
                 .frame(width: gutter, height: size.height)
                 .offset(x: x - gutter / 2)
-                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
-                    let pairStart = cumulativeWidth(upTo: i, in: size)
-                    let pairWidth = (columns[i].widthFraction + columns[i + 1].widthFraction) * size.width
-                    guard pairWidth > 0 else { return }
-                    workspace.resizeColumn(pairLeadingIndex: i,
-                                           leadingFraction: (value.location.x - pairStart) / pairWidth)
-                })
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck"))
+                    .onChanged { value in
+                        // Prime deferral on the first drag event and skip its resize,
+                        // so panes start deferring the child PTY winsize before any
+                        // frame changes (no leaked intermediate SIGWINCH).
+                        if workspace.beginPaneResize() { return }
+                        let pairStart = cumulativeWidth(upTo: i, in: size)
+                        let pairWidth = (columns[i].widthFraction + columns[i + 1].widthFraction) * size.width
+                        guard pairWidth > 0 else { return }
+                        workspace.resizeColumn(pairLeadingIndex: i,
+                                               leadingFraction: (value.location.x - pairStart) / pairWidth)
+                    }
+                    .onEnded { _ in workspace.endPaneResize() })
         }
     }
 
@@ -919,10 +925,13 @@ private struct TerminalDeck: View {
                 ResizeHandle(orientation: .horizontal, inset: gutter / 2)
                     .frame(width: w, height: gutter)
                     .offset(x: x, y: y - gutter / 2)
-                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck")).onChanged { value in
-                        guard size.height > 0 else { return }
-                        workspace.resizeRow(columnIndex: i, topFraction: value.location.y / size.height)
-                    })
+                    .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("deck"))
+                        .onChanged { value in
+                            if workspace.beginPaneResize() { return }
+                            guard size.height > 0 else { return }
+                            workspace.resizeRow(columnIndex: i, topFraction: value.location.y / size.height)
+                        }
+                        .onEnded { _ in workspace.endPaneResize() })
             }
         }
     }

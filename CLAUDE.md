@@ -143,6 +143,14 @@ constraints learned the hard way:
   intermediate size, so an animated width change becomes a SIGWINCH storm that
   makes the shell reprint its prompt repeatedly. Do not add `.animation` around
   pane frames.
+- A *deliberate* divider/window drag is also a stream of intermediate sizes, so
+  the same storm applies. `WorkspaceStore.beginPaneResize`/`endPaneResize` post
+  `mtermPaneResizeBegan/Ended`; each terminal defers its child-PTY winsize for the
+  drag and flushes the final size once on release (window live-resize does the same
+  via `viewWillStartLiveResize`). The local emulator still resizes live, so display
+  stays correct — only the child SIGWINCH is coalesced. Drive this through
+  NotificationCenter, **not** a `@Published`/`updateNSView` binding: reading resize
+  state in a pane body while a drag mutates it trips a SwiftUI AttributeGraph cycle.
 - Keep `TerminalPane` explicitly constrained to the `GeometryReader` size and
   keep its conversation title compressible/truncated. Agent titles can be much
   wider than a split pane; allowing either the title or SwiftTerm's intrinsic
@@ -166,6 +174,12 @@ image-aware agent TUIs can attach Simulator screenshots.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.
+The same shell-integration foreground marker (OSC 633 `run`/`idle`) also toggles
+`Terminal.reflowOnResize`: on while a foreground program owns the pane so its
+normal-buffer output rewraps across width changes (e.g. `yarn start` logs stay
+un-clipped after shrink-then-widen), off again at the shell prompt so the prompt
+never duplicates. Alt-screen TUIs are unaffected — their buffer has no scrollback,
+so reflow stays disabled there regardless.
 Sidebar session rows resolve single-click, Command-click, and double-click from
 one tap handler. Do not install competing single/double SwiftUI tap gestures:
 that defers every pane switch until macOS's double-click interval expires.
@@ -326,22 +340,28 @@ reset defaults; `AppSettings.ansiColors` is the live user-selected palette.
 ### SwiftTerm (fork)
 
 `Package.swift` pins **`luanzt/SwiftTerm`** (a fork), not upstream. The fork carries
-two mTerm-specific changes:
+these mTerm-specific changes:
 
-- `Buffer.isReflowEnabled → false`, because upstream rewraps lines on resize and
-  makes zsh/powerlevel10k leave duplicated prompt lines.
+- `Buffer.isReflowEnabled → hasScrollback && reflowOnResize`, making rewrap-on-
+  resize a per-terminal toggle (`Terminal.reflowOnResize`, default `false`). Reflow
+  stays off for shell prompts because zsh/powerlevel10k redraw on SIGWINCH assuming
+  xterm no-reflow and otherwise leave duplicated prompt lines. mTerm turns it on
+  only while a foreground program owns the pane (see below).
+- `LocalProcessTerminalView.defersProcessWindowSizeUpdates` (default `false`) holds
+  back intermediate child-PTY winsizes and flushes the final one when cleared, so a
+  drag does not storm the shell with SIGWINCH.
 - Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`, so
   explicit OSC 8 links can match normal text at rest and change color only while
   highlighted; macOS also uses a pointing-hand cursor only while the configured
   link mode allows activation.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
-these changes on top of upstream. (The fork's `edev-no-reflow` branch continues
-past that point with unshipped experiments such as configurable reflow and
-deferred PTY resize; `mterm` is the stable set mTerm ships against.)
+these changes on top of upstream. (`edev-no-reflow` is the working branch these
+were developed on; `mterm` is the stable set mTerm ships against — keep it at the
+pinned revision.)
 
 To bump SwiftTerm, rebase the fork's `mterm` branch onto the new upstream
-revision, re-apply both changes, and update the `revision:` in `Package.swift` —
+revision, re-apply these changes, and update the `revision:` in `Package.swift` —
 do not point back at upstream.
 
 ### Sparkle
