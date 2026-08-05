@@ -335,7 +335,12 @@ two mTerm-specific changes:
   highlighted; macOS also uses a pointing-hand cursor only while the configured
   link mode allows activation.
 
-To bump SwiftTerm, rebase the fork's `edev-no-reflow` branch onto the new upstream
+`Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
+these changes on top of upstream. (The fork's `edev-no-reflow` branch continues
+past that point with unshipped experiments such as configurable reflow and
+deferred PTY resize; `mterm` is the stable set mTerm ships against.)
+
+To bump SwiftTerm, rebase the fork's `mterm` branch onto the new upstream
 revision, re-apply both changes, and update the `revision:` in `Package.swift` —
 do not point back at upstream.
 
