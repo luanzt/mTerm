@@ -846,7 +846,7 @@ private struct TerminalDeck: View {
         }
     }
 
-    // Rect off-screen cho session không nằm trong grid (giữ process sống).
+    // Off-screen rect for sessions not in the grid (keeps the process alive).
     private func offscreen(_ size: CGSize) -> CGRect {
         CGRect(x: -size.width - 10, y: 0, width: max(size.width, 1), height: max(size.height, 1))
     }

@@ -3,7 +3,7 @@ import SwiftUI
 @testable import mTerm
 
 final class ThemePaletteTests: XCTestCase {
-    // Bảo vệ diện mạo mặc định: emerald phải khớp hằng số gốc.
+    // Guard the default appearance: emerald must match the original constants.
     func testEmeraldPaletteMatchesLegacyConstants() {
         let p = MTermThemeID.emerald.palette
         XCTAssertEqual(p.terminalBackground, 0x0A0C0F)

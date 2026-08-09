@@ -88,7 +88,7 @@ final class WorkspaceStore: ObservableObject {
         self.defaults = defaults
         self.codexTitleLookup = codexTitleLookup
         sessions = [SessionRecord.shell()]
-        defaults.removeObject(forKey: sessionsKey)   // dọn state cũ nếu có
+        defaults.removeObject(forKey: sessionsKey)   // clear any stale saved state
         workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
         defaults.removeObject(forKey: "edev.workspace.history")
         selectedSessionID = sessions.first?.id

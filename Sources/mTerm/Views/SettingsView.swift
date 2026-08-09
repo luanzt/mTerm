@@ -50,7 +50,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Theme")
                 .font(.headline)
-            Text("Theme đổi màu giao diện và nền/chữ/con trỏ terminal. Màu ANSI cấu hình riêng ở tab ANSI Colors.")
+            Text("Themes change the interface and terminal background/text/cursor colors. ANSI colors are configured separately in the ANSI Colors tab.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 

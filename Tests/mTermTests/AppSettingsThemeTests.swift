@@ -19,7 +19,7 @@ final class AppSettingsThemeTests: XCTestCase {
         XCTAssertEqual(MTermTheme.current, MTermThemeID.dracula.palette)
         XCTAssertEqual(d.string(forKey: "mterm.settings.themeID"), "dracula")
 
-        // Đọc lại từ defaults khôi phục đúng theme và cập nhật current.
+        // Reloading from defaults restores the correct theme and updates current.
         let s2 = AppSettings(defaults: d)
         XCTAssertEqual(s2.themeID, .dracula)
         XCTAssertEqual(MTermTheme.current, MTermThemeID.dracula.palette)

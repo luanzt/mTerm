@@ -33,8 +33,8 @@ final class AgentSessionTitleTests: XCTestCase {
 
     func testPreservesUnicodeConversationTitles() {
         XCTAssertEqual(
-            AgentSessionTitle.normalize("Sửa tiêu đề phiên 🚀"),
-            "Sửa tiêu đề phiên 🚀")
+            AgentSessionTitle.normalize("Éditer le résumé 🚀"),
+            "Éditer le résumé 🚀")
     }
 
     func testStripsClaudeSpinnerDecorationFromConversationTitle() {

@@ -799,7 +799,7 @@ final class WorkspaceStoreTests: XCTestCase {
             defaults: UserDefaults(suiteName: UUID().uuidString)!,
             codexTitleLookup: { receivedID in
                 XCTAssertEqual(receivedID, threadID)
-                return "Notifications hiện tại đang được xử lý như nào"
+                return "How notifications are currently handled"
             })
         let session = store.sessions[0]
 
@@ -812,7 +812,7 @@ final class WorkspaceStoreTests: XCTestCase {
         }
         XCTAssertEqual(
             store.displayTitle(for: session),
-            "Notifications hiện tại đang được xử lý như nào")
+            "How notifications are currently handled")
     }
 
     func testManualCodexTitleOverridesMetadataLookup() async {
