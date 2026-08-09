@@ -32,6 +32,7 @@ final class AppSettings: ObservableObject {
         static let sidebarWidth = "mterm.settings.sidebarWidth"
         static let ansiColors = "mterm.settings.ansiColors"
         static let newTerminalPlacement = "mterm.settings.newTerminalPlacement"
+        static let themeID = "mterm.settings.themeID"
     }
 
     private let defaults: UserDefaults
@@ -84,6 +85,13 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var themeID: MTermThemeID {
+        didSet {
+            defaults.set(themeID.rawValue, forKey: Key.themeID)
+            MTermTheme.current = themeID.palette
+        }
+    }
+
     var opensNewTerminalsInSplit: Bool { newTerminalPlacement == .newSplit }
 
     init(defaults: UserDefaults = .standard) {
@@ -117,6 +125,11 @@ final class AppSettings: ObservableObject {
         newTerminalPlacement = defaults.string(forKey: Key.newTerminalPlacement)
             .flatMap(NewTerminalPlacement.init(rawValue:))
             ?? .currentPane
+
+        let storedTheme = defaults.string(forKey: Key.themeID)
+            .flatMap(MTermThemeID.init(rawValue:)) ?? .emerald
+        themeID = storedTheme
+        MTermTheme.current = storedTheme.palette
     }
 
     func terminalFont() -> NSFont {
