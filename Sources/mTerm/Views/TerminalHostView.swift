@@ -11,6 +11,10 @@ struct TerminalHostView: NSViewRepresentable {
     let fontName: String
     let fontSize: Double
     let ansiColors: [UInt32]
+    /// Drives the terminal's foreground/background/cursor/link colors from the
+    /// active theme. Passed in (rather than read statically) so SwiftUI re-runs
+    /// updateNSView when the user switches theme.
+    let themeID: MTermThemeID
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
@@ -73,6 +77,7 @@ struct TerminalHostView: NSViewRepresentable {
         searchController.terminalView = terminal
         context.coordinator.appliedFontName = fontName
         context.coordinator.appliedFontSize = fontSize
+        context.coordinator.appliedThemeID = themeID
         context.coordinator.appliedANSIColors = ansiColors
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
@@ -286,6 +291,15 @@ struct TerminalHostView: NSViewRepresentable {
             nsView.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
             context.coordinator.appliedANSIColors = ansiColors
         }
+        if context.coordinator.appliedThemeID != themeID {
+            nsView.caretColor = NSColor(hex: MTermTheme.terminalCaret)
+            nsView.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
+            nsView.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
+            nsView.layer?.backgroundColor = NSColor(hex: MTermTheme.terminalBackground).cgColor
+            nsView.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
+            nsView.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
+            context.coordinator.appliedThemeID = themeID
+        }
         // Backup path in case the frame was already real before the observer was
         // installed; the coordinator guards against starting twice.
         context.coordinator.startShellIfReady(nsView)
@@ -338,6 +352,7 @@ struct TerminalHostView: NSViewRepresentable {
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
+        var appliedThemeID: MTermThemeID?
         var paneResizeObservers: [NSObjectProtocol] = []
         var onTerminalTitle: (String) -> Void = { _ in }
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }

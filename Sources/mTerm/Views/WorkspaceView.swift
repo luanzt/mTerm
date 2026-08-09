@@ -998,6 +998,7 @@ private struct TerminalPane: View {
                                  fontName: settings.terminalFontName,
                                  fontSize: settings.terminalFontSize,
                                  ansiColors: settings.ansiColors,
+                                 themeID: settings.themeID,
                                  onForeground: {
                                      workspace.setForeground(session.id, command: $0)
                                  },
