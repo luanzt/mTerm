@@ -8,6 +8,8 @@ struct SettingsView: View {
         TabView {
             general
                 .tabItem { Label("General", systemImage: "gearshape") }
+            appearance
+                .tabItem { Label("Appearance", systemImage: "paintbrush") }
             typography
                 .tabItem { Label("Typography", systemImage: "textformat") }
             ansiColors
@@ -38,6 +40,35 @@ struct SettingsView: View {
             Text("Explicit split commands, including ⇧⌘N and ⇧⌘T, always open a split.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+        .padding(8)
+    }
+
+    private var appearance: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Theme")
+                .font(.headline)
+            Text("Theme đổi màu giao diện và nền/chữ/con trỏ terminal. Màu ANSI cấu hình riêng ở tab ANSI Colors.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
+                    alignment: .leading,
+                    spacing: 10
+                ) {
+                    ForEach(MTermThemeID.allCases) { theme in
+                        ThemeSwatchButton(
+                            theme: theme,
+                            isSelected: settings.themeID == theme,
+                            action: { settings.themeID = theme })
+                    }
+                }
+                .padding(.vertical, 4)
+            }
 
             Spacer()
         }
@@ -186,4 +217,47 @@ struct SettingsView: View {
         ANSIEntry(index: 7, name: "White"),
         ANSIEntry(index: 15, name: "Bright White"),
     ]
+}
+
+private struct ThemeSwatchButton: View {
+    let theme: MTermThemeID
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        let p = theme.palette
+        Button(action: action) {
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(p.terminal)
+                    VStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(p.accent)
+                            .frame(width: 12, height: 3)
+                        Circle()
+                            .fill(p.accent)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .frame(width: 26, height: 26)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(p.border, lineWidth: 1))
+
+                Text(theme.displayName)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(p.text)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: 42)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(isSelected ? p.accent.opacity(0.14) : p.terminal.opacity(0.4)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(isSelected ? p.accent : p.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 }
