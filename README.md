@@ -1,19 +1,60 @@
-# mTerm
+<p align="center">
+  <img src="docs/images/mterm-hero.png" alt="mTerm — a native macOS terminal built for parallel work">
+</p>
 
-A native macOS terminal **multiplexer** — run several shells side by side in one
-window, split panes by drag-and-drop, maximize one to focus, and keep everything
-organized in workspace folders. Built in Swift with SwiftUI + AppKit, backed by
-[SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal engine.
+<p align="center">
+  <a href="https://github.com/luanzt/mTerm/releases/latest"><img src="https://img.shields.io/github/v/release/luanzt/mTerm?display_name=tag&amp;sort=semver&amp;style=for-the-badge&amp;logo=github" alt="Latest mTerm release"></a>&nbsp;
+  <a href="https://github.com/luanzt/mTerm/releases"><img src="https://img.shields.io/github/downloads/luanzt/mTerm/total?style=for-the-badge&amp;logo=github&amp;label=DOWNLOADS" alt="Total downloads"></a>&nbsp;
+  <img src="https://img.shields.io/badge/macOS-14%2B-000000?style=for-the-badge&amp;logo=apple&amp;logoColor=white" alt="Requires macOS 14 or later">&nbsp;
+  <a href="#support-mterm"><img src="https://img.shields.io/badge/Support-mTerm-EA9A97?style=for-the-badge" alt="Support mTerm"></a>
+</p>
+
+<p align="center">
+  <strong>A native macOS terminal built for parallel work.</strong><br>
+  Run shells and coding agents side by side, organize sessions by project, and switch focus without stopping anything.
+</p>
 
 > **Requires macOS 14 (Sonoma) or later**, Apple Silicon or Intel.
 
-![mTerm showing six terminal sessions in a split-pane workspace](docs/images/mterm-overview.png)
+## Download
+
+Download the latest `mTerm-<version>.dmg` from
+[**GitHub Releases**](https://github.com/luanzt/mTerm/releases/latest), open it,
+and drag **mTerm** into your **Applications** folder.
+
+### First launch
+
+mTerm is ad-hoc signed but *not notarized*, so macOS Gatekeeper will block a
+normal double-click the first time. Pick whichever is easiest:
+
+- **Right-click the app ▸ Open**, then confirm in the dialog — once is enough.
+- Or System Settings ▸ Privacy & Security ▸ *Open Anyway*.
+- Or strip the quarantine flag from Terminal, then open normally:
+  ```bash
+  xattr -c /Applications/mTerm.app
+  ```
+  (`xattr -c` clears the `com.apple.quarantine` attribute macOS adds to
+  downloaded apps, so Gatekeeper stops blocking it.)
+
+## Highlights
+
+- **Up to six live panes** — build a 3-column × 2-row deck and rearrange it by
+  dragging sessions directly onto panes.
+- **Project workspaces** — group related sessions under folders and start new
+  shells in each project's chosen directory.
+- **Nothing stops when hidden** — sessions parked outside the visible grid keep
+  their terminal views and shell processes alive.
+- **Built for coding agents** — Claude Code and Codex can notify you when they
+  need attention, then take you back to the originating session.
+- **Fast navigation** — focus panes with ⌘1…⌘6, maximize with ⌥F, and search
+  terminal history with ⌘F.
+- **Make it yours** — choose from 17 live themes and configure typography and all
+  16 ANSI colors independently.
 
 ## Themes
 
-Choose from **17 themes** in **Settings ▸ Appearance**. Theme changes are
-applied live across the app chrome and terminal without restarting your shell;
-ANSI colors remain independently configurable.
+Choose a theme in **Settings ▸ Appearance**. Changes apply live across the app
+chrome and terminal without restarting your shell.
 
 <table>
   <tr>
@@ -33,24 +74,6 @@ ANSI colors remain independently configurable.
     <td width="50%"><strong>Carbon</strong><br><img src="docs/images/theme-carbon.png" alt="mTerm using the Carbon theme"></td>
   </tr>
 </table>
-
----
-
-## Install
-
-1. Download `mTerm-<version>.dmg` from the
-   [**latest release**](https://github.com/luanzt/mTerm/releases/latest).
-2. Open the `.dmg` and drag **mTerm** into your **Applications** folder.
-3. **First launch:** the app is ad-hoc signed but *not notarized*, so macOS
-   Gatekeeper will block a normal double-click. Pick whichever is easiest:
-   - **Right-click the app ▸ Open**, then confirm in the dialog — once is enough.
-   - Or System Settings ▸ Privacy & Security ▸ *Open Anyway*.
-   - Or strip the quarantine flag from Terminal, then open normally:
-     ```bash
-     xattr -c /Applications/mTerm.app
-     ```
-     (`xattr -c` clears the `com.apple.quarantine` attribute macOS adds to
-     downloaded apps, so Gatekeeper stops blocking it.)
 
 ---
 
@@ -94,12 +117,25 @@ so you can see several shells at once.
 | **⇧⌘N**  | Create an ungrouped terminal in another pane; replace the focused pane if all 6 are occupied |
 | **⌘T**   | Create a terminal in the focused session's workspace, replacing that pane |
 | **⇧⌘T**  | Create a terminal in that workspace in another pane; replace the focused pane if all 6 are occupied |
+| **⌘F**   | Search the focused terminal's visible buffer and scrollback |
 | **⌘B**   | Toggle the sidebar (also **View ▸ Toggle Sidebar**, or the titlebar button) |
 | **⌥F**   | Maximize the focused pane, or restore its previous layout |
 | **⌘1…⌘6** | Focus the corresponding visible pane |
 
 > Hidden sessions keep running. A shell parked out of the visible grid is **not**
 > killed — its process stays alive so nothing is lost when you swap panes.
+
+---
+
+## Support mTerm
+
+If mTerm makes your day a little easier, you can support its continued development.
+
+<p align="center">
+  <img src="docs/images/support-qr.jpg" width="420" alt="QR code to support mTerm">
+</p>
+
+<p align="center"><sub>Scan to support mTerm. Thank you ❤️</sub></p>
 
 ---
 
@@ -138,7 +174,7 @@ The script does a release build, assembles `mTerm.app` (embedding Sparkle and
 `packaging/AppIcon.icns` when the icon is present), **ad-hoc code-signs** it so
 it launches on Apple Silicon, and packs it into a drag-to-Applications `.dmg`.
 The result is **not notarized** — see the first-launch note under
-[Install](#install).
+[Download](#download).
 
 Sparkle provides in-app updates for releases after `v1.1.2`. Its
 `mterm-ed25519` EdDSA private key lives in the maintainer's macOS Keychain; only
