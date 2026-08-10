@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="#support-mterm"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-black.png" width="217" alt="Buy me a coffee"></a>
+</p>
+
+<p align="center">
   <strong>A native macOS terminal built for parallel work.</strong><br>
   Run shells and coding agents side by side, organize sessions by project, and switch focus without stopping anything.
 </p>
