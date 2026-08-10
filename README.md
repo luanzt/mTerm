@@ -9,6 +9,31 @@ organized in workspace folders. Built in Swift with SwiftUI + AppKit, backed by
 
 ![mTerm showing six terminal sessions in a split-pane workspace](docs/images/mterm-overview.png)
 
+## Themes
+
+Choose from **17 themes** in **Settings ▸ Appearance**. Theme changes are
+applied live across the app chrome and terminal without restarting your shell;
+ANSI colors remain independently configurable.
+
+<table>
+  <tr>
+    <td width="50%"><strong>Emerald</strong><br><img src="docs/images/theme-emerald.png" alt="mTerm using the Emerald theme"></td>
+    <td width="50%"><strong>Dracula</strong><br><img src="docs/images/theme-dracula.png" alt="mTerm using the Dracula theme"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Monokai</strong><br><img src="docs/images/theme-monokai.png" alt="mTerm using the Monokai theme"></td>
+    <td width="50%"><strong>Rosé Pine</strong><br><img src="docs/images/theme-rose-pine.png" alt="mTerm using the Rosé Pine theme"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Onyx</strong><br><img src="docs/images/theme-onyx.png" alt="mTerm using the Onyx theme"></td>
+    <td width="50%"><strong>Graphite</strong><br><img src="docs/images/theme-graphite.png" alt="mTerm using the Graphite theme"></td>
+  </tr>
+  <tr>
+    <td width="50%"><strong>Slate</strong><br><img src="docs/images/theme-slate.png" alt="mTerm using the Slate theme"></td>
+    <td width="50%"><strong>Carbon</strong><br><img src="docs/images/theme-carbon.png" alt="mTerm using the Carbon theme"></td>
+  </tr>
+</table>
+
 ---
 
 ## Install
@@ -158,7 +183,7 @@ releases can download, replace, and relaunch mTerm from inside the app.
 | Layout model | `Models/PaneGrid.swift` | Pure value type: columns → panes, with drop-zone placement and self-healing invariants |
 | Rendering | `Views/WorkspaceView.swift` | Lays panes out by absolute frame + offset; parks hidden sessions off-screen |
 | Terminal bridge | `Views/TerminalHostView.swift` | Wraps SwiftTerm's `LocalProcessTerminalView` |
-| Theme | `Views/Theme.swift` | The "Emerald" dark palette |
+| Theme | `Views/Theme.swift`, `Views/SettingsView.swift` | Runtime-selectable catalog of 17 palettes |
 
 Only **workspace folders** are persisted (UserDefaults); terminal sessions are
 intentionally ephemeral and rebuilt each launch.
