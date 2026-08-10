@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="#support-mterm"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-black.png" width="217" alt="Buy me a coffee"></a>
+  <a href="#support-mterm"><img src="docs/images/buy-me-a-coffee.svg" width="240" alt="Buy me a coffee"></a>
 </p>
 
 <p align="center">
