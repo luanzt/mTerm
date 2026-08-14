@@ -37,7 +37,9 @@ final class TerminalRestoreCoordinatorTests: XCTestCase {
         let first = TerminalRestoreCommandCoordinator(intent: descriptor)
         let second = TerminalRestoreCommandCoordinator(intent: descriptor)
 
-        XCTAssertNotNil(first.takeCommandOnFirstShellIdle())
+        XCTAssertEqual(
+            first.takeCommandOnFirstShellIdle(),
+            Array("codex resume -- 'Client API'".utf8) + [0x0D])
         XCTAssertNil(first.takeCommandOnFirstShellIdle())
         XCTAssertNotNil(second.takeCommandOnFirstShellIdle())
     }

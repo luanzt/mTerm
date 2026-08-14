@@ -16,7 +16,9 @@ enum TerminalSessionRestoration {
             return "codex resume \(shellQuote(threadID.uuidString.lowercased()))"
         case .codex(.name(let name)):
             guard isValidName(name) else { return nil }
-            return "codex resume \(shellQuote(name))"
+            // End option parsing before an arbitrary user-defined name so a
+            // value such as "--last" cannot silently select a different thread.
+            return "codex resume -- \(shellQuote(name))"
         }
     }
 

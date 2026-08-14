@@ -143,6 +143,26 @@ final class WorkspaceSnapshotTests: XCTestCase {
         XCTAssertEqual(fallback, PaneGrid.single(ids[0]))
     }
 
+    func testGridRepairNormalizesFiniteWidthsWithoutOverflow() {
+        let ids = (0..<3).map { _ in UUID() }
+        let snapshot = PaneGridSnapshot(columns: [
+            .init(panes: [ids[0]], widthFraction: Double.greatestFiniteMagnitude,
+                  rowFraction: 0.5),
+            .init(panes: [ids[1]], widthFraction: Double.greatestFiniteMagnitude,
+                  rowFraction: 0.5),
+            .init(panes: [ids[2]], widthFraction: Double.greatestFiniteMagnitude,
+                  rowFraction: 0.5),
+        ])
+
+        let repaired = snapshot.repaired(validSessionIDs: ids, fallbackID: ids[0])
+
+        XCTAssertEqual(
+            repaired.columns.reduce(CGFloat.zero) { $0 + $1.widthFraction },
+            1,
+            accuracy: 0.000_001)
+        XCTAssertTrue(repaired.columns.allSatisfy { $0.widthFraction.isFinite })
+    }
+
     func testValidationRepairsSessionsDirectoriesWorkspaceReferencesAndSelection() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory
@@ -241,6 +261,41 @@ final class WorkspaceSnapshotTests: XCTestCase {
             homeDirectory: URL(fileURLWithPath: "/tmp")))
 
         XCTAssertNil(validated.sessions[0].activeAgent)
+    }
+
+    func testValidationDropsSavedGridWhenCurrentGridIsNotItsMaximizedPane() throws {
+        let a = UUID()
+        let b = UUID()
+        var snapshot = WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [
+                session(id: a, directory: "/tmp"),
+                session(id: b, directory: "/tmp"),
+            ],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [a], widthFraction: 0.5, rowFraction: 0.5),
+                .init(panes: [b], widthFraction: 0.5, rowFraction: 0.5),
+            ]),
+            savedGrid: PaneGridSnapshot(columns: [
+                .init(panes: [a], widthFraction: 0.5, rowFraction: 0.5),
+                .init(panes: [b], widthFraction: 0.5, rowFraction: 0.5),
+            ]),
+            selectedSessionID: a,
+            isSidebarVisible: true,
+            sessionSequence: 2)
+
+        var validated = try XCTUnwrap(snapshot.validated(
+            validWorkspaceIDs: [],
+            homeDirectory: URL(fileURLWithPath: "/tmp")))
+        XCTAssertNil(validated.savedGrid)
+
+        snapshot.grid = PaneGridSnapshot(columns: [
+            .init(panes: [a], widthFraction: 1, rowFraction: 0.5),
+        ])
+        validated = try XCTUnwrap(snapshot.validated(
+            validWorkspaceIDs: [],
+            homeDirectory: URL(fileURLWithPath: "/tmp")))
+        XCTAssertNotNil(validated.savedGrid)
     }
 
     private func session(

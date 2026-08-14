@@ -34,8 +34,10 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         agentNotifications.start()
         agentNotifications.onOpenSession = { [weak self] sessionID in
             guard let self else { return }
+            NSApp.unhide(nil)
             window?.makeKeyAndOrderFront(nil)
             workspace.openInActivePane(sessionID)
+            NSRunningApplication.current.activate(options: [.activateAllWindows])
         }
         workspace.onClaudeAttention = { [weak self] session, kind in
             self?.agentNotifications.deliver(.claude(kind), from: session)

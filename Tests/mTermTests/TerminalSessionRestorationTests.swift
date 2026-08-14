@@ -23,7 +23,14 @@ final class TerminalSessionRestorationTests: XCTestCase {
         XCTAssertEqual(
             TerminalSessionRestoration.command(
                 for: .codex(locator: .name("Client's $API; `rm -rf`"))),
-            "codex resume 'Client'\"'\"'s $API; `rm -rf`'")
+            "codex resume -- 'Client'\"'\"'s $API; `rm -rf`'")
+    }
+
+    func testCodexNameCannotBeParsedAsAResumeOption() {
+        XCTAssertEqual(
+            TerminalSessionRestoration.command(
+                for: .codex(locator: .name("--last"))),
+            "codex resume -- '--last'")
     }
 
     func testRejectsEmptyAndControlCharacterCodexNames() {

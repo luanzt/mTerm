@@ -480,7 +480,10 @@ final class WorkspaceStore: ObservableObject {
             return
         }
         if isCodex {
-            resolveCodexLocator(for: id, exactName: title)
+            // Display normalization may collapse whitespace or truncate a long
+            // title. Resume identity must instead preserve the exact validated
+            // Codex name emitted by the TUI.
+            resolveCodexLocator(for: id, exactName: rawTitle)
             // A real OSC title is a manual `/rename`/`--name` value and wins
             // over any in-flight automatic-title metadata lookup.
             cancelCodexTitleResolution(for: id)

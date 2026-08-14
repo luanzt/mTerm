@@ -52,10 +52,15 @@ struct WorkspaceSnapshot: Codable, Equatable {
         let repairedGrid = grid.repaired(
             validSessionIDs: validSessionIDs,
             fallbackID: fallbackID)
-        let repairedSavedGrid = savedGrid.map {
+        let repairedSavedGrid: PaneGrid? = savedGrid.map {
             $0.repaired(validSessionIDs: validSessionIDs, fallbackID: nil)
-        }.flatMap { candidate in
-            candidate.paneIDs.count > 1 ? candidate : nil
+        }.flatMap { candidate -> PaneGrid? in
+            guard repairedGrid.paneIDs.count == 1,
+                  candidate.paneIDs.count > 1,
+                  candidate.paneIDs.contains(repairedGrid.paneIDs[0]) else {
+                return nil
+            }
+            return candidate
         }
         let repairedSelection: UUID?
         if let selectedSessionID,
@@ -229,14 +234,15 @@ struct PaneGridSnapshot: Codable, Equatable {
             return PaneGrid(columns: [])
         }
 
-        let totalWidth = repairedColumns.reduce(CGFloat.zero) {
-            $0 + $1.widthFraction
+        // Scale before summing so several individually finite persisted values
+        // cannot overflow the accumulator and leave the restored layout at inf.
+        let largestWidth = repairedColumns.map(\.widthFraction).max() ?? 1
+        let scaledTotal = repairedColumns.reduce(CGFloat.zero) {
+            $0 + ($1.widthFraction / largestWidth)
         }
-        let normalizedWidth = totalWidth.isFinite && totalWidth > 0
-            ? totalWidth
-            : CGFloat(repairedColumns.count)
         for index in repairedColumns.indices {
-            repairedColumns[index].widthFraction /= normalizedWidth
+            repairedColumns[index].widthFraction =
+                (repairedColumns[index].widthFraction / largestWidth) / scaledTotal
         }
         return PaneGrid(columns: repairedColumns)
     }

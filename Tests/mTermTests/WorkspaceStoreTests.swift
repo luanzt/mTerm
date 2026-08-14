@@ -1282,7 +1282,7 @@ final class WorkspaceStoreTests: XCTestCase {
             .codex(locator: .threadID(threadID)))
     }
 
-    func testCodexNameIsStoredImmediatelyWhenNoUUIDIsKnown() async {
+    func testCodexNameIsStoredExactlyWhileDisplayTitleIsNormalized() async {
         let store = WorkspaceStore(
             defaults: UserDefaults(suiteName: UUID().uuidString)!,
             codexTitleLookup: { _ in nil },
@@ -1297,7 +1297,10 @@ final class WorkspaceStoreTests: XCTestCase {
 
         XCTAssertEqual(
             store.restorationIntent(for: paneID),
-            .codex(locator: .name("Client API")))
+            .codex(locator: .name("  Client   API  ")))
+        XCTAssertEqual(
+            store.displayTitle(for: store.sessions[0]),
+            "Client API")
     }
 
     func testUniqueCodexNameLookupUpgradesFallbackToThreadUUID() async {
