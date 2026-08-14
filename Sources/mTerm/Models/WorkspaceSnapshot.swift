@@ -33,6 +33,10 @@ struct WorkspaceSnapshot: Codable, Equatable {
             if !directoryExists || !isDirectory.boolValue {
                 session.workingDirectory = homeDirectory.path
             }
+            if let activeAgent = session.activeAgent,
+               TerminalSessionRestoration.command(for: activeAgent) == nil {
+                session.activeAgent = nil
+            }
             repairedSessions.append(session)
         }
         guard !repairedSessions.isEmpty else { return nil }

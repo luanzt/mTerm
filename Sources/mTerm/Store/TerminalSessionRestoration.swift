@@ -33,3 +33,22 @@ enum TerminalSessionRestoration {
         }
     }
 }
+
+final class TerminalRestoreCommandCoordinator {
+    private let intent: AgentResumeDescriptor?
+    private var didConsumeFirstIdle = false
+
+    init(intent: AgentResumeDescriptor?) {
+        self.intent = intent
+    }
+
+    func takeCommandOnFirstShellIdle() -> [UInt8]? {
+        guard !didConsumeFirstIdle else { return nil }
+        didConsumeFirstIdle = true
+        guard let intent,
+              let command = TerminalSessionRestoration.command(for: intent) else {
+            return nil
+        }
+        return Array(command.utf8) + [0x0D]
+    }
+}

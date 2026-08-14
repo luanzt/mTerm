@@ -214,6 +214,35 @@ final class WorkspaceSnapshotTests: XCTestCase {
             homeDirectory: URL(fileURLWithPath: "/tmp")))
     }
 
+    func testValidationDropsAgentLocatorThatCannotProduceSafeResumeCommand() throws {
+        let id = UUID()
+        let snapshot = WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [
+                SessionSnapshot(
+                    id: id,
+                    stableTitle: "Terminal",
+                    workingDirectory: "/tmp",
+                    workspaceID: nil,
+                    createdAt: Date(timeIntervalSince1970: 0),
+                    wasManuallyRenamed: false,
+                    activeAgent: .codex(locator: .name("bad\nname"))),
+            ],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [id], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: id,
+            isSidebarVisible: true,
+            sessionSequence: 0)
+
+        let validated = try XCTUnwrap(snapshot.validated(
+            validWorkspaceIDs: [],
+            homeDirectory: URL(fileURLWithPath: "/tmp")))
+
+        XCTAssertNil(validated.sessions[0].activeAgent)
+    }
+
     private func session(
         id: UUID,
         directory: String,

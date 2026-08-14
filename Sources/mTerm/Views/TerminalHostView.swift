@@ -15,6 +15,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// active theme. Passed in (rather than read statically) so SwiftUI re-runs
     /// updateNSView when the user switches theme.
     let themeID: MTermThemeID
+    /// Exact agent conversation to resume after this pane's newly started
+    /// interactive shell reports its first idle prompt.
+    let restorationIntent: AgentResumeDescriptor?
     /// Reports the pane's foreground command (via shell integration): the command
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
@@ -35,6 +38,11 @@ struct TerminalHostView: NSViewRepresentable {
     var onAgentInputSubmitted: () -> Void = {}
     /// Clears the transient working indicator when the user interrupts a turn.
     var onAgentWorkInterrupted: () -> Void = {}
+    /// Transitions the store's pending restore state immediately before the
+    /// one-shot command is sent to the shell.
+    var onRestorationLaunched: () -> Void = {}
+    /// Reports the authoritative UUID emitted by Claude's SessionStart hook.
+    var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
     /// Selects the owning pane when Finder drops one or more files directly on
     /// its AppKit-backed terminal view.
     var onFileDrop: () -> Void = {}
@@ -44,7 +52,7 @@ struct TerminalHostView: NSViewRepresentable {
     var onProcessTeardown: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator()
+        Coordinator(restorationIntent: restorationIntent)
     }
 
     func makeNSView(context: Context) -> LocalProcessTerminalView {
@@ -83,6 +91,8 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
+        context.coordinator.onRestorationLaunched = onRestorationLaunched
+        context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
         context.coordinator.onFileDrop = onFileDrop
         context.coordinator.onProcessTeardown = onProcessTeardown
         terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
@@ -184,6 +194,10 @@ struct TerminalHostView: NSViewRepresentable {
                 DispatchQueue.main.async {
                     context.coordinator.terminal?.getTerminal().reflowOnResize = false
                     report(nil)
+                    guard let input = context.coordinator.restoreCommandCoordinator
+                        .takeCommandOnFirstShellIdle() else { return }
+                    context.coordinator.onRestorationLaunched()
+                    context.coordinator.terminal?.send(input)
                 }
             case nil:               break
             }
@@ -192,7 +206,14 @@ struct TerminalHostView: NSViewRepresentable {
         let reportClaudeTurnStarted = onAgentInputSubmitted
         let reportClaudeTurnCompleted = onAgentWorkInterrupted
         terminal.getTerminal().registerOscHandler(code: ClaudeIntegration.oscCode) { payload in
-            if let kind = ClaudeIntegration.parse(payload) {
+            if let sessionID = ClaudeIntegration.sessionID(
+                from: payload,
+                foregroundCommand: context.coordinator.foregroundCommand
+            ) {
+                DispatchQueue.main.async {
+                    context.coordinator.onClaudeSessionIdentity(sessionID)
+                }
+            } else if let kind = ClaudeIntegration.parse(payload) {
                 DispatchQueue.main.async {
                     context.coordinator.isClaudeResponseExpected = kind.expectsUserResponse
                     reportAttention(kind)
@@ -231,7 +252,7 @@ struct TerminalHostView: NSViewRepresentable {
         // replacing another pane's content — which would leave the shell unstarted
         // and the terminal blank.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let arguments = session.command.isEmpty ? ["-l"] : ["-lc", session.command]
+        let arguments = ["-l"]
         let directory = session.workingDirectory
         // Start from the app's environment, replace any inherited terminal
         // identity with mTerm's, and advertise true-color + OSC 8 hyperlink
@@ -246,10 +267,17 @@ struct TerminalHostView: NSViewRepresentable {
         // the pane reports its foreground command.
         let environment = ShellIntegration.childEnvironment(shell: shell, base: base)
         context.coordinator.startShell = { term in
+            var isDirectory: ObjCBool = false
+            let directoryExists = FileManager.default.fileExists(
+                atPath: directory,
+                isDirectory: &isDirectory)
+            let launchDirectory = directoryExists && isDirectory.boolValue
+                ? directory
+                : FileManager.default.homeDirectoryForCurrentUser.path
             term.startProcess(executable: shell,
                               args: arguments,
                               environment: environment,
-                              currentDirectory: directory)
+                              currentDirectory: launchDirectory)
             onProcessStarted(term.process.shellPid)
         }
 
@@ -279,6 +307,8 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
+        context.coordinator.onRestorationLaunched = onRestorationLaunched
+        context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
         context.coordinator.onFileDrop = onFileDrop
         context.coordinator.onProcessTeardown = onProcessTeardown
         if context.coordinator.appliedFontName != fontName
@@ -340,6 +370,7 @@ struct TerminalHostView: NSViewRepresentable {
     // MARK: Coordinator
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
+        let restoreCommandCoordinator: TerminalRestoreCommandCoordinator
         var terminal: LocalProcessTerminalView?
         var didStartProcess = false
         var frameObserver: NSObjectProtocol?
@@ -358,10 +389,18 @@ struct TerminalHostView: NSViewRepresentable {
         var onWorkingDirectoryChange: (String?) -> Void = { _ in }
         var onAgentInputSubmitted: () -> Void = {}
         var onAgentWorkInterrupted: () -> Void = {}
+        var onRestorationLaunched: () -> Void = {}
+        var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
         var onFileDrop: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
         private var pendingCodexLocalInteractionCheck: DispatchWorkItem?
+
+        init(restorationIntent: AgentResumeDescriptor?) {
+            restoreCommandCoordinator = TerminalRestoreCommandCoordinator(
+                intent: restorationIntent)
+            super.init()
+        }
 
         func startShellIfReady(_ terminal: LocalProcessTerminalView) {
             guard !didStartProcess,

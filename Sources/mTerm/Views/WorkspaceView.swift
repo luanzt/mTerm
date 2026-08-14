@@ -999,6 +999,8 @@ private struct TerminalPane: View {
                                  fontSize: settings.terminalFontSize,
                                  ansiColors: settings.ansiColors,
                                  themeID: settings.themeID,
+                                 restorationIntent: workspace.restorationIntent(
+                                     for: session.id),
                                  onForeground: {
                                      workspace.setForeground(session.id, command: $0)
                                  },
@@ -1019,6 +1021,14 @@ private struct TerminalPane: View {
                                  },
                                  onAgentWorkInterrupted: {
                                      workspace.reportAgentWorkInterrupted(session.id)
+                                 },
+                                 onRestorationLaunched: {
+                                     workspace.reportRestorationLaunched(session.id)
+                                 },
+                                 onClaudeSessionIdentity: {
+                                     workspace.reportClaudeSessionIdentity(
+                                         session.id,
+                                         sessionID: $0)
                                  },
                                  onFileDrop: {
                                      workspace.selectedSessionID = session.id
