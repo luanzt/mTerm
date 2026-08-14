@@ -52,12 +52,45 @@ The manual menu currently owns these app-wide commands:
 - `hosting.sizingOptions = []` is deliberate: without it, each SwiftTerm view's
   intrinsic width propagates up and AppKit grows the *window* when you add a pane.
 
+### Application and terminal lifecycle
+
+The main window's close button intentionally does **not** close its
+`NSHostingView`: `MTermAppDelegate.windowShouldClose` hides mTerm and returns
+`false`. Reopening from the Dock unhides and fronts that same window instance, so
+every SwiftTerm view, PTY, process, SSH connection, live command, and scrollback
+continues untouched. Settings remains an ordinary closeable retained window.
+`applicationShouldTerminateAfterLastWindowClosed` must stay `false`, and the main
+window uses the stable `mTerm.mainWindow` frame autosave name.
+Notification click-through must unhide the application before fronting the main
+window and selecting the originating session.
+
+`⌘Q` has deliberately different semantics. `applicationShouldTerminate` first
+flushes the durable workspace snapshot, then removes event monitors, calls
+`TerminalProcessRegistry.terminateAll(force: true)`, and dismantles both hosting
+views before returning `.terminateNow`. Do not route quit through session-close
+mutations or remove that forced cleanup: quitting must release shells, Node,
+Claude, Codex, and other processes still owned by mTerm's terminal Unix sessions.
+There is no detached PTY/tmux/helper daemon, so SSH, arbitrary running commands,
+editor state, terminal scrollback, and an exact in-flight response byte position
+do not survive `⌘Q`.
+
 ### State: `WorkspaceStore` (Store/WorkspaceStore.swift)
 
 Single `@MainActor ObservableObject`, the source of truth for everything:
 `sessions`, `workspaces` (folders), selection/hover/drag IDs, and the `grid`.
-All mutations (create/close/hide/place/maximize/resize) go through it. Only
-`workspaces` is persisted (UserDefaults); sessions are intentionally not.
+All mutations (create/close/hide/place/maximize/resize) go through it. Workspace
+folders remain persisted in UserDefaults. Durable terminal state is separately
+written atomically to
+`~/Library/Application Support/mTerm/workspace-v1.json` through
+`WorkspaceSnapshotStore`: ordered sessions, stable titles/manual-rename flags,
+last CWD, workspace IDs, visible and saved/maximized grids, geometry, selection,
+sidebar state, terminal sequence, and an exact active-agent locator. Writes are
+debounced after mutations and synchronously flushed before quit. Snapshot decode
+and repair remove orphan/duplicate/over-capacity panes, clamp geometry, detach
+missing workspaces, fall back to home for a vanished CWD, and leave malformed or
+unsupported files untouched until the user makes a new durable mutation.
+PIDs, process status, transient agent titles, working/attention state, hover,
+drag, resize, and find UI are runtime-only and must not be added to the schema.
 `savedGrid` backs maximize↔restore and is cleared by any structural grid change.
 Keyboard creation commands explicitly target `selectedSessionID`. A normal
 sidebar session click replaces the focused pane; it must not use the last-hovered
@@ -195,6 +228,19 @@ a short grace period. Cleanup is app-owned and must not depend only on SwiftUI's
 eventual `dismantleNSView`; that hook remains an idempotent fallback and releases
 SwiftTerm's PTY resources.
 
+Every restored terminal still starts a normal interactive login shell (`-l`),
+never a persisted arbitrary command or `-lc`. A
+`TerminalRestoreCommandCoordinator` owns one typed restore intent for the
+lifetime of that terminal view. After OSC 633 reports the shell's first idle
+prompt, the bridge reports idle to `WorkspaceStore`, marks restoration launched,
+then sends exactly one safely shell-quoted command plus CR:
+`claude --resume <uuid>`, `codex resume <uuid>`, or
+`codex resume -- <exact-name>`. The `--` delimiter prevents a name such as
+`--last` from becoming a CLI option. This ordering preserves the first pending
+locator while allowing a failed command that returns to idle to clear it and
+avoid a relaunch loop. Hidden restored sessions follow the same path because
+their terminal views are still constructed and parked off-screen.
+
 `ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
 with `TERM_PROGRAM=mTerm`, advertises true color, and defaults
 `FORCE_HYPERLINK=1` because SwiftTerm supports OSC 8 but generic
@@ -235,6 +281,13 @@ non-notifying completion sequence to it directly. These payloads drive only the
 sidebar's working spinner around the main agent's turn; they are never forwarded
 as attention notifications and do not inspect prompt, transcript, or assistant-
 message fields.
+
+The same generated plugin listens to official `SessionStart` events. It extracts
+only `session_id` from hook stdin and returns the private
+`OSC 777;session;mTerm Claude;<uuid>` terminal sequence. The Swift parser accepts
+that UUID only while shell integration says Claude owns the pane. Startup,
+resume, clear, compact, and fork therefore replace the pane's stable resume
+locator without reading a transcript or modifying user/project Claude settings.
 
 Authorization is requested in context the first time a supported agent starts,
 rather than at app launch. Do not replace the Claude `Notification` hook with
@@ -317,6 +370,19 @@ local `state_*.sqlite` metadata, with bounded retries for a new chat's first
 prompt. It does not read rollout JSONL or prompt/assistant transcript content.
 An OSC name from `/rename`, `--name`, or a named `/resume` cancels and overrides
 the metadata lookup.
+
+The UUID is also persisted immediately as that pane's exact Codex resume locator,
+separately from transient display-title lookup state; cancellation or `/rename`
+must never erase a UUID already known for the active thread. When Codex exposes
+only a name, mTerm stores the validated exact name as a fallback and queries only
+SQLite metadata rows for exact name + standardized CWD. A unique valid result
+upgrades the locator to UUID; an absent or ambiguous result keeps the name.
+The persisted/resumed name is the raw validated OSC value; display normalization
+may collapse whitespace or truncate the sidebar label but must not mutate that
+locator. Neither path opens rollout JSONL. Returning to the shell after an
+acknowledged agent, or returning to idle after a launched restore without
+receiving identity, clears the locator so the next app launch stays at a plain
+shell.
 
 Keep the agent title as a separate display-only overlay. Never mutate the
 session's stable `Terminal N` title, infer a title from rendered terminal text,
