@@ -1156,7 +1156,100 @@ final class WorkspaceStoreTests: XCTestCase {
             .claude(sessionID: claudeID))
     }
 
-    private func sessionSnapshot(id: UUID, directory: String) -> SessionSnapshot {
+    func testFirstShellIdlePreservesPendingRestorationIntent() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: UUID()))
+        defer { fixture.remove() }
+
+        fixture.store.setForeground(fixture.paneID, command: nil)
+
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            fixture.activeAgent)
+    }
+
+    func testLaunchedRestorationAcknowledgesAndReplacesClaudeIdentity() throws {
+        let oldID = UUID()
+        let newID = UUID()
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: oldID))
+        defer { fixture.remove() }
+
+        fixture.store.reportRestorationLaunched(fixture.paneID)
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.reportClaudeSessionIdentity(fixture.paneID, sessionID: newID)
+
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            .claude(sessionID: newID))
+        fixture.store.flushSnapshot()
+        XCTAssertEqual(
+            fixture.snapshotStore.load()?.sessions[0].activeAgent,
+            .claude(sessionID: newID))
+    }
+
+    func testLaunchedRestorationReturningToIdleBeforeIdentityClearsLocator() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: UUID()))
+        defer { fixture.remove() }
+
+        fixture.store.reportRestorationLaunched(fixture.paneID)
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.setForeground(fixture.paneID, command: nil)
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+        fixture.store.flushSnapshot()
+        XCTAssertNil(fixture.snapshotStore.load()?.sessions[0].activeAgent)
+    }
+
+    func testAcknowledgedLiveClaudeExitClearsLocator() throws {
+        let fixture = try makeRestorationFixture(activeAgent: nil)
+        defer { fixture.remove() }
+        let claudeID = UUID()
+
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: claudeID)
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            .claude(sessionID: claudeID))
+
+        fixture.store.setForeground(fixture.paneID, command: nil)
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    func testClaudeIdentityIsIgnoredUnlessClaudeOwnsForeground() throws {
+        let fixture = try makeRestorationFixture(activeAgent: nil)
+        defer { fixture.remove() }
+
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: UUID())
+        fixture.store.setForeground(fixture.paneID, command: "codex")
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: UUID())
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    func testClosingSessionRemovesPendingRestorationState() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .codex(locator: .name("Pending thread")))
+        defer { fixture.remove() }
+        let session = try XCTUnwrap(fixture.store.session(for: fixture.paneID))
+
+        fixture.store.close(session)
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    private func sessionSnapshot(
+        id: UUID,
+        directory: String,
+        activeAgent: AgentResumeDescriptor? = nil
+    ) -> SessionSnapshot {
         SessionSnapshot(
             id: id,
             stableTitle: "Terminal 1",
@@ -1164,6 +1257,53 @@ final class WorkspaceStoreTests: XCTestCase {
             workspaceID: nil,
             createdAt: Date(timeIntervalSince1970: 0),
             wasManuallyRenamed: false,
-            activeAgent: nil)
+            activeAgent: activeAgent)
+    }
+
+    private func makeRestorationFixture(
+        activeAgent: AgentResumeDescriptor?
+    ) throws -> RestorationFixture {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-restoration-state-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let paneID = UUID()
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        snapshotStore.flush(WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [sessionSnapshot(
+                id: paneID,
+                directory: root.path,
+                activeAgent: activeAgent)],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [paneID], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: paneID,
+            isSidebarVisible: true,
+            sessionSequence: 1))
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+        return RestorationFixture(
+            root: root,
+            paneID: paneID,
+            activeAgent: activeAgent,
+            store: store,
+            snapshotStore: snapshotStore)
+    }
+
+    private struct RestorationFixture {
+        let root: URL
+        let paneID: UUID
+        let activeAgent: AgentResumeDescriptor?
+        let store: WorkspaceStore
+        let snapshotStore: WorkspaceSnapshotStore
+
+        func remove() {
+            try? FileManager.default.removeItem(at: root)
+        }
     }
 }

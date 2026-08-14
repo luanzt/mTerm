@@ -89,6 +89,7 @@ final class WorkspaceStore: ObservableObject {
     private var agentResumeDescriptors: [SessionRecord.ID: AgentResumeDescriptor] = [:] {
         didSet { durableStateDidChange() }
     }
+    private var agentRestorationPhases: [SessionRecord.ID: AgentRestorationPhase] = [:]
     private var dragEndMonitor: Any?
     private var codexTitleResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
     private var codexThreadIDs: [SessionRecord.ID: UUID] = [:]
@@ -141,6 +142,10 @@ final class WorkspaceStore: ObservableObject {
             agentResumeDescriptors = Dictionary(
                 uniqueKeysWithValues: restoredSnapshot.sessions.compactMap { session in
                     session.activeAgent.map { (session.id, $0) }
+                })
+            agentRestorationPhases = Dictionary(
+                uniqueKeysWithValues: agentResumeDescriptors.keys.map {
+                    ($0, AgentRestorationPhase.pending)
                 })
         } else {
             sessions = [SessionRecord.shell()]
@@ -315,6 +320,7 @@ final class WorkspaceStore: ObservableObject {
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
         agentResumeDescriptors.removeValue(forKey: session.id)
+        agentRestorationPhases.removeValue(forKey: session.id)
         if findSessionID == session.id { findSessionID = nil }
         cancelCodexTitleResolution(for: session.id)
         sessions.remove(at: index)
@@ -422,6 +428,7 @@ final class WorkspaceStore: ObservableObject {
         // Starting an interactive agent does not imply it already has a prompt
         // to process. Submission is reported separately from TerminalHostView.
         agentWorkingSessionIDs.remove(id)
+        updateAgentRestorationState(for: id, foregroundCommand: command)
     }
 
     /// Starts (or resumes) an active agent's work. Claude reports this through
@@ -816,6 +823,22 @@ final class WorkspaceStore: ObservableObject {
         agentResumeDescriptors[id]
     }
 
+    func reportRestorationLaunched(_ id: SessionRecord.ID) {
+        guard agentResumeDescriptors[id] != nil,
+              agentRestorationPhases[id] == .pending else { return }
+        agentRestorationPhases[id] = .launched
+    }
+
+    func reportClaudeSessionIdentity(
+        _ id: SessionRecord.ID,
+        sessionID: UUID
+    ) {
+        guard session(for: id) != nil,
+              claudeSessionIDs.contains(id) else { return }
+        agentRestorationPhases[id] = .acknowledged
+        agentResumeDescriptors[id] = .claude(sessionID: sessionID)
+    }
+
     func flushSnapshot() {
         guard allowsSnapshotWrites else { return }
         snapshotStore?.flush(makeSnapshot())
@@ -825,6 +848,51 @@ final class WorkspaceStore: ObservableObject {
         guard !isHydratingSnapshot, let snapshotStore else { return }
         allowsSnapshotWrites = true
         snapshotStore.schedule(makeSnapshot())
+    }
+
+    private func updateAgentRestorationState(
+        for id: SessionRecord.ID,
+        foregroundCommand: String?
+    ) {
+        guard let descriptor = agentResumeDescriptors[id] else {
+            agentRestorationPhases.removeValue(forKey: id)
+            return
+        }
+
+        let expectedCommand: String
+        switch descriptor {
+        case .claude:
+            expectedCommand = "claude"
+        case .codex:
+            expectedCommand = "codex"
+        }
+
+        switch agentRestorationPhases[id] {
+        case .pending:
+            // The initial shell-idle marker is what triggers command injection.
+            // It must not look like the restored agent exited.
+            return
+        case .launched:
+            guard foregroundCommand == expectedCommand else {
+                agentRestorationPhases[id] = .failed
+                agentResumeDescriptors.removeValue(forKey: id)
+                return
+            }
+        case .acknowledged:
+            guard foregroundCommand == expectedCommand else {
+                agentRestorationPhases.removeValue(forKey: id)
+                agentResumeDescriptors.removeValue(forKey: id)
+                return
+            }
+        case .failed:
+            agentResumeDescriptors.removeValue(forKey: id)
+        case nil:
+            // A descriptor created by an identity event is marked acknowledged
+            // in that same event. This only covers defensive legacy state.
+            if foregroundCommand != expectedCommand {
+                agentResumeDescriptors.removeValue(forKey: id)
+            }
+        }
     }
 
     private func makeSnapshot() -> WorkspaceSnapshot {
