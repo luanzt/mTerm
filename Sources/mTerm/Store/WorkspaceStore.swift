@@ -16,16 +16,24 @@ extension Notification.Name {
 final class WorkspaceStore: ObservableObject {
     typealias CodexTitleLookup = @Sendable (UUID) async -> String?
 
-    @Published private(set) var sessions: [SessionRecord]
+    @Published private(set) var sessions: [SessionRecord] {
+        didSet { durableStateDidChange() }
+    }
     @Published private(set) var workspaces: [WorkspaceFolder]
-    @Published var selectedSessionID: SessionRecord.ID?
+    @Published var selectedSessionID: SessionRecord.ID? {
+        didSet { durableStateDidChange() }
+    }
     @Published var draggedSessionID: SessionRecord.ID?
     /// Non-nil only when a visible pane header initiated the current session
     /// drag. Sidebar drags keep their existing open/replace semantics.
     @Published private(set) var draggedPaneSessionID: SessionRecord.ID?
     @Published var draggedWorkspaceID: WorkspaceFolder.ID?
-    @Published var isSidebarVisible = true
-    @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
+    @Published var isSidebarVisible = true {
+        didSet { durableStateDidChange() }
+    }
+    @Published private(set) var grid: PaneGrid = PaneGrid(columns: []) {
+        didSet { durableStateDidChange() }
+    }
     /// True while the user is dragging a pane divider. Deliberately NOT
     /// `@Published`: terminals defer the child PTY winsize via a NotificationCenter
     /// event (see `beginPaneResize`/`endPaneResize`) rather than a SwiftUI binding,
@@ -57,18 +65,30 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var agentSessionTitles: [SessionRecord.ID: String] = [:]
     /// User-renamed sessions always display their stable title instead of an
     /// agent-supplied transient OSC title.
-    private var manuallyRenamedSessionIDs: Set<SessionRecord.ID> = []
+    private var manuallyRenamedSessionIDs: Set<SessionRecord.ID> = [] {
+        didSet { durableStateDidChange() }
+    }
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
     /// lockstep with `grid`, which already drives view updates.
-    private var savedGrid: PaneGrid?
+    private var savedGrid: PaneGrid? {
+        didSet { durableStateDidChange() }
+    }
 
-    private var sessionSequence = 0
+    private var sessionSequence = 0 {
+        didSet { durableStateDidChange() }
+    }
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
     private let defaults: UserDefaults
+    private let snapshotStore: WorkspaceSnapshotStore?
     private let codexTitleLookup: CodexTitleLookup
+    private var allowsSnapshotWrites: Bool
+    private var isHydratingSnapshot = true
+    private var agentResumeDescriptors: [SessionRecord.ID: AgentResumeDescriptor] = [:] {
+        didSet { durableStateDidChange() }
+    }
     private var dragEndMonitor: Any?
     private var codexTitleResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
     private var codexThreadIDs: [SessionRecord.ID: UUID] = [:]
@@ -81,18 +101,53 @@ final class WorkspaceStore: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
+        snapshotStore: WorkspaceSnapshotStore? = nil,
         codexTitleLookup: @escaping CodexTitleLookup = {
             await CodexThreadTitleResolver.title(for: $0)
         }
     ) {
         self.defaults = defaults
+        self.snapshotStore = snapshotStore
         self.codexTitleLookup = codexTitleLookup
-        sessions = [SessionRecord.shell()]
         defaults.removeObject(forKey: sessionsKey)   // clear any stale saved state
-        workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
+        let restoredWorkspaces = Self.decode(
+            [WorkspaceFolder].self,
+            from: defaults,
+            key: workspacesKey) ?? []
+        workspaces = restoredWorkspaces
         defaults.removeObject(forKey: "edev.workspace.history")
-        selectedSessionID = sessions.first?.id
-        grid = selectedSessionID.map(PaneGrid.single) ?? PaneGrid(columns: [])
+
+        let hadSnapshotFile = snapshotStore?.containsStoredSnapshot ?? false
+        let restoredSnapshot = snapshotStore?.load()?.validated(
+            validWorkspaceIDs: Set(restoredWorkspaces.map(\.id)),
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        allowsSnapshotWrites = !hadSnapshotFile || restoredSnapshot != nil
+
+        if let restoredSnapshot {
+            sessions = restoredSnapshot.sessions.map(\.sessionRecord)
+            selectedSessionID = restoredSnapshot.selectedSessionID
+            grid = restoredSnapshot.grid.repaired(
+                validSessionIDs: sessions.map(\.id),
+                fallbackID: restoredSnapshot.selectedSessionID ?? sessions.first?.id)
+            savedGrid = restoredSnapshot.savedGrid?.repaired(
+                validSessionIDs: sessions.map(\.id),
+                fallbackID: nil)
+            isSidebarVisible = restoredSnapshot.isSidebarVisible
+            sessionSequence = restoredSnapshot.sessionSequence
+            manuallyRenamedSessionIDs = Set(
+                restoredSnapshot.sessions
+                    .filter(\.wasManuallyRenamed)
+                    .map(\.id))
+            agentResumeDescriptors = Dictionary(
+                uniqueKeysWithValues: restoredSnapshot.sessions.compactMap { session in
+                    session.activeAgent.map { (session.id, $0) }
+                })
+        } else {
+            sessions = [SessionRecord.shell()]
+            selectedSessionID = sessions.first?.id
+            grid = selectedSessionID.map(PaneGrid.single) ?? PaneGrid(columns: [])
+        }
+        isHydratingSnapshot = false
     }
 
     var selectedSession: SessionRecord? {
@@ -259,6 +314,7 @@ final class WorkspaceStore: ObservableObject {
         agentWorkingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
+        agentResumeDescriptors.removeValue(forKey: session.id)
         if findSessionID == session.id { findSessionID = nil }
         cancelCodexTitleResolution(for: session.id)
         sessions.remove(at: index)
@@ -754,6 +810,41 @@ final class WorkspaceStore: ObservableObject {
 
     private func persist() {
         Self.encode(workspaces, to: defaults, key: workspacesKey)
+    }
+
+    func restorationIntent(for id: SessionRecord.ID) -> AgentResumeDescriptor? {
+        agentResumeDescriptors[id]
+    }
+
+    func flushSnapshot() {
+        guard allowsSnapshotWrites else { return }
+        snapshotStore?.flush(makeSnapshot())
+    }
+
+    private func durableStateDidChange() {
+        guard !isHydratingSnapshot, let snapshotStore else { return }
+        allowsSnapshotWrites = true
+        snapshotStore.schedule(makeSnapshot())
+    }
+
+    private func makeSnapshot() -> WorkspaceSnapshot {
+        WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: sessions.map { session in
+                SessionSnapshot(
+                    id: session.id,
+                    stableTitle: session.title,
+                    workingDirectory: session.workingDirectory,
+                    workspaceID: session.workspaceID,
+                    createdAt: session.createdAt,
+                    wasManuallyRenamed: manuallyRenamedSessionIDs.contains(session.id),
+                    activeAgent: agentResumeDescriptors[session.id])
+            },
+            grid: PaneGridSnapshot(grid),
+            savedGrid: savedGrid.map(PaneGridSnapshot.init),
+            selectedSessionID: selectedSessionID,
+            isSidebarVisible: isSidebarVisible,
+            sessionSequence: sessionSequence)
     }
 
     private func makeSession(workingDirectory: String? = nil,

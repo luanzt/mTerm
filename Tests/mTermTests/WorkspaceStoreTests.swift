@@ -970,4 +970,200 @@ final class WorkspaceStoreTests: XCTestCase {
         store.endPaneResize()
         XCTAssertFalse(store.isResizingPanes)
     }
+
+    func testInjectedSnapshotStoreRestoresDurableWorkspaceState() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-roundtrip-\(UUID().uuidString)",
+                                  isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try manager.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: project.path)
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 60)
+        let original = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        let first = original.sessions[0].id
+        original.renameSession(first, to: "Pinned shell")
+        original.setWorkingDirectory(first, report: project.path)
+        original.createSession(in: folder)
+        let second = original.sessions[1].id
+        original.createSession()
+        let hidden = original.sessions[2].id
+        original.openSingle(first)
+        original.place(second, onPaneWith: first, zone: .right)
+        original.resizeColumn(pairLeadingIndex: 0, leadingFraction: 0.35)
+        original.focusGridPane(at: 1)
+        original.toggleSidebar()
+        original.toggleMaximize(second)
+
+        original.flushSnapshot()
+        let restored = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+
+        XCTAssertEqual(restored.sessions.map(\.id), [first, second, hidden])
+        XCTAssertEqual(restored.sessions[0].title, "Pinned shell")
+        XCTAssertEqual(restored.sessions[0].workingDirectory, project.path)
+        XCTAssertEqual(restored.sessions[1].workspaceID, folder.id)
+        XCTAssertEqual(restored.grid.paneIDs, [second])
+        XCTAssertEqual(restored.selectedSessionID, second)
+        XCTAssertFalse(restored.isSidebarVisible)
+        XCTAssertTrue(restored.isMaximized)
+
+        restored.toggleMaximize(second)
+        XCTAssertEqual(restored.grid.paneIDs, [first, second])
+        XCTAssertEqual(restored.grid.columns[0].widthFraction, 0.35, accuracy: 0.000_001)
+        XCTAssertEqual(restored.grid.columns[1].widthFraction, 0.65, accuracy: 0.000_001)
+        XCTAssertFalse(restored.grid.paneIDs.contains(hidden))
+
+        restored.setForeground(first, command: "claude")
+        restored.setAgentTitle(first, title: "Transient agent title")
+        XCTAssertEqual(restored.displayTitle(for: restored.sessions[0]), "Pinned shell")
+
+        restored.createSession()
+        XCTAssertEqual(restored.sessions.last?.title, "Terminal 3")
+    }
+
+    func testDurableMutationSchedulesSnapshotWithoutExplicitFlush() async throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-autosave-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 0.01)
+        let store = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+
+        store.toggleSidebar()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let restored = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        XCTAssertFalse(restored.isSidebarVisible)
+    }
+
+    func testCorruptSnapshotIsPreservedUntilDurableMutation() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-corrupt-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let malformed = Data("{ broken snapshot".utf8)
+        try malformed.write(to: fileURL)
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+
+        XCTAssertEqual(store.sessions.count, 1)
+        store.flushSnapshot()
+        XCTAssertEqual(try Data(contentsOf: fileURL), malformed)
+
+        store.toggleSidebar()
+        store.flushSnapshot()
+        let decoded = try JSONDecoder().decode(
+            WorkspaceSnapshot.self,
+            from: Data(contentsOf: fileURL))
+        XCTAssertFalse(decoded.isSidebarVisible)
+    }
+
+    func testUnsupportedSnapshotIsPreservedUntilDurableMutation() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-unsupported-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let id = UUID()
+        let unsupported = WorkspaceSnapshot(
+            schemaVersion: 99,
+            sessions: [sessionSnapshot(id: id, directory: "/tmp")],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [id], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: id,
+            isSidebarVisible: true,
+            sessionSequence: 1)
+        let originalData = try JSONEncoder().encode(unsupported)
+        try originalData.write(to: fileURL)
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: WorkspaceSnapshotStore(fileURL: fileURL))
+
+        store.flushSnapshot()
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(store.sessions.count, 1)
+    }
+
+    func testRestoreFallsBackToHomeForMissingDirectoryAndKeepsAgentLocator() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-agent-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let paneID = UUID()
+        let claudeID = UUID()
+        let snapshot = WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [
+                SessionSnapshot(
+                    id: paneID,
+                    stableTitle: "Claude",
+                    workingDirectory: root.appendingPathComponent("missing").path,
+                    workspaceID: nil,
+                    createdAt: Date(timeIntervalSince1970: 1),
+                    wasManuallyRenamed: false,
+                    activeAgent: .claude(sessionID: claudeID)),
+            ],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [paneID], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: paneID,
+            isSidebarVisible: true,
+            sessionSequence: 1)
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        snapshotStore.flush(snapshot)
+
+        let restored = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+
+        XCTAssertEqual(
+            restored.sessions[0].workingDirectory,
+            manager.homeDirectoryForCurrentUser.path)
+        XCTAssertEqual(
+            restored.restorationIntent(for: paneID),
+            .claude(sessionID: claudeID))
+
+        restored.flushSnapshot()
+        XCTAssertEqual(
+            snapshotStore.load()?.sessions[0].activeAgent,
+            .claude(sessionID: claudeID))
+    }
+
+    private func sessionSnapshot(id: UUID, directory: String) -> SessionSnapshot {
+        SessionSnapshot(
+            id: id,
+            stableTitle: "Terminal 1",
+            workingDirectory: directory,
+            workspaceID: nil,
+            createdAt: Date(timeIntervalSince1970: 0),
+            wasManuallyRenamed: false,
+            activeAgent: nil)
+    }
 }

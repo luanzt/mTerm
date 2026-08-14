@@ -24,6 +24,10 @@ final class WorkspaceSnapshotStore {
         self.debounceInterval = max(debounceInterval, 0)
     }
 
+    var containsStoredSnapshot: Bool {
+        FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
     func load() -> WorkspaceSnapshot? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         return try? JSONDecoder().decode(WorkspaceSnapshot.self, from: data)
