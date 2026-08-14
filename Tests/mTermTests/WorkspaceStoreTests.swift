@@ -1245,6 +1245,129 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
     }
 
+    func testCodexUUIDBecomesStableLocatorBeforeTitleLookupCompletes() async {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return "Automatic title"
+            },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testCodexRenameCannotEraseKnownThreadUUID() {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+        store.setAgentTitle(paneID, title: "Renamed conversation")
+        store.renameSession(paneID, to: "Pinned pane")
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testCodexNameIsStoredImmediatelyWhenNoUUIDIsKnown() async {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return nil
+            })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "  Client   API  ")
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .name("Client API")))
+    }
+
+    func testUniqueCodexNameLookupUpgradesFallbackToThreadUUID() async {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { name, directory in
+                guard name == "Client API", !directory.isEmpty else { return nil }
+                return threadID
+            })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Client API")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testAmbiguousCodexNameLookupKeepsExactNameFallback() async {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Ambiguous thread")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .name("Ambiguous thread")))
+    }
+
+    func testLaterCodexUUIDReplacesPreviousNameLocatorAndClearsOnExit() {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Named thread")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+
+        store.setForeground(paneID, command: nil)
+        XCTAssertNil(store.restorationIntent(for: paneID))
+    }
+
+    func testCodexTitleOutsideForegroundNeverCreatesResumeLocator() {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in UUID() })
+        let paneID = store.sessions[0].id
+
+        store.setAgentTitle(paneID, title: UUID().uuidString)
+        store.setAgentTitle(paneID, title: "Named thread")
+
+        XCTAssertNil(store.restorationIntent(for: paneID))
+    }
+
     private func sessionSnapshot(
         id: UUID,
         directory: String,

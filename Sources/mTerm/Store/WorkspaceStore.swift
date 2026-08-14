@@ -15,6 +15,7 @@ extension Notification.Name {
 @MainActor
 final class WorkspaceStore: ObservableObject {
     typealias CodexTitleLookup = @Sendable (UUID) async -> String?
+    typealias CodexThreadIDLookup = @Sendable (String, String) async -> UUID?
 
     @Published private(set) var sessions: [SessionRecord] {
         didSet { durableStateDidChange() }
@@ -84,6 +85,7 @@ final class WorkspaceStore: ObservableObject {
     private let defaults: UserDefaults
     private let snapshotStore: WorkspaceSnapshotStore?
     private let codexTitleLookup: CodexTitleLookup
+    private let codexThreadIDLookup: CodexThreadIDLookup
     private var allowsSnapshotWrites: Bool
     private var isHydratingSnapshot = true
     private var agentResumeDescriptors: [SessionRecord.ID: AgentResumeDescriptor] = [:] {
@@ -93,6 +95,8 @@ final class WorkspaceStore: ObservableObject {
     private var dragEndMonitor: Any?
     private var codexTitleResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
     private var codexThreadIDs: [SessionRecord.ID: UUID] = [:]
+    private var codexLocatorResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
+    private var codexLocatorNames: [SessionRecord.ID: String] = [:]
 
     /// App-level side effects stay outside the store; the store resolves the
     /// session before forwarding a trusted agent attention event.
@@ -105,11 +109,17 @@ final class WorkspaceStore: ObservableObject {
         snapshotStore: WorkspaceSnapshotStore? = nil,
         codexTitleLookup: @escaping CodexTitleLookup = {
             await CodexThreadTitleResolver.title(for: $0)
+        },
+        codexThreadIDLookup: @escaping CodexThreadIDLookup = { name, directory in
+            await CodexThreadTitleResolver.threadID(
+                forExactName: name,
+                workingDirectory: directory)
         }
     ) {
         self.defaults = defaults
         self.snapshotStore = snapshotStore
         self.codexTitleLookup = codexTitleLookup
+        self.codexThreadIDLookup = codexThreadIDLookup
         defaults.removeObject(forKey: sessionsKey)   // clear any stale saved state
         let restoredWorkspaces = Self.decode(
             [WorkspaceFolder].self,
@@ -323,6 +333,7 @@ final class WorkspaceStore: ObservableObject {
         agentRestorationPhases.removeValue(forKey: session.id)
         if findSessionID == session.id { findSessionID = nil }
         cancelCodexTitleResolution(for: session.id)
+        cancelCodexLocatorResolution(for: session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
         if selectedSessionID == session.id {
@@ -409,6 +420,7 @@ final class WorkspaceStore: ObservableObject {
         agentSessionTitles.removeValue(forKey: id)
         if command != "codex" {
             cancelCodexTitleResolution(for: id)
+            cancelCodexLocatorResolution(for: id)
         }
 
         let isClaude = command == "claude"
@@ -446,28 +458,35 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
-        guard session(for: id) != nil,
-              !manuallyRenamedSessionIDs.contains(id) else { return }
-
-        if codexSessionIDs.contains(id),
-           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
-            resolveCodexTitle(for: id, threadID: threadID)
-            return
-        }
+        guard session(for: id) != nil else { return }
 
         let isClaude = claudeSessionIDs.contains(id)
-        guard isClaude || codexSessionIDs.contains(id),
-              let title = AgentSessionTitle.normalize(
-                rawTitle,
-                strippingLeadingDecoration: isClaude),
-              agentSessionTitles[id] != title else {
+        let isCodex = codexSessionIDs.contains(id)
+        guard isClaude || isCodex else { return }
+
+        if isCodex,
+           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
+            recordCodexLocator(for: id, locator: .threadID(threadID))
+            cancelCodexLocatorResolution(for: id)
+            if !manuallyRenamedSessionIDs.contains(id) {
+                resolveCodexTitle(for: id, threadID: threadID)
+            }
             return
         }
-        if codexSessionIDs.contains(id) {
+
+        guard let title = AgentSessionTitle.normalize(
+            rawTitle,
+            strippingLeadingDecoration: isClaude) else {
+            return
+        }
+        if isCodex {
+            resolveCodexLocator(for: id, exactName: title)
             // A real OSC title is a manual `/rename`/`--name` value and wins
             // over any in-flight automatic-title metadata lookup.
             cancelCodexTitleResolution(for: id)
         }
+        guard !manuallyRenamedSessionIDs.contains(id),
+              agentSessionTitles[id] != title else { return }
         agentSessionTitles[id] = title
     }
 
@@ -535,6 +554,53 @@ final class WorkspaceStore: ObservableObject {
 
         let path = url.standardizedFileURL.path
         return path.hasPrefix("/") ? path : nil
+    }
+
+    private func recordCodexLocator(
+        for sessionID: SessionRecord.ID,
+        locator: CodexResumeLocator
+    ) {
+        guard codexSessionIDs.contains(sessionID),
+              session(for: sessionID) != nil else { return }
+        agentRestorationPhases[sessionID] = .acknowledged
+        agentResumeDescriptors[sessionID] = .codex(locator: locator)
+    }
+
+    private func resolveCodexLocator(
+        for sessionID: SessionRecord.ID,
+        exactName: String
+    ) {
+        guard let session = session(for: sessionID),
+              codexSessionIDs.contains(sessionID) else { return }
+
+        cancelCodexLocatorResolution(for: sessionID)
+        codexLocatorNames[sessionID] = exactName
+        if case .codex(.threadID) = agentResumeDescriptors[sessionID] {
+            // `/rename` must not downgrade an exact UUID to a name. The metadata
+            // lookup can still replace it if this title belongs to a switched
+            // thread with a distinct UUID.
+            agentRestorationPhases[sessionID] = .acknowledged
+        } else {
+            recordCodexLocator(for: sessionID, locator: .name(exactName))
+        }
+
+        let lookup = codexThreadIDLookup
+        let workingDirectory = session.workingDirectory
+        codexLocatorResolutionTasks[sessionID] = Task { [weak self] in
+            let threadID = await lookup(exactName, workingDirectory)
+            guard let self,
+                  codexSessionIDs.contains(sessionID),
+                  codexLocatorNames[sessionID] == exactName else { return }
+            codexLocatorResolutionTasks[sessionID] = nil
+            codexLocatorNames[sessionID] = nil
+            guard let threadID else { return }
+            recordCodexLocator(for: sessionID, locator: .threadID(threadID))
+        }
+    }
+
+    private func cancelCodexLocatorResolution(for sessionID: SessionRecord.ID) {
+        codexLocatorResolutionTasks.removeValue(forKey: sessionID)?.cancel()
+        codexLocatorNames.removeValue(forKey: sessionID)
     }
 
     private func resolveCodexTitle(
