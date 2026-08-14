@@ -84,6 +84,23 @@ enum ClaudeIntegration {
         payloadText(payload) == turnStartedPayload
     }
 
+    /// SessionStart is the authoritative Claude conversation identity source.
+    /// Accept it only from the pane currently owned by Claude so another process
+    /// cannot plant a resume locator for the next app launch.
+    static func sessionID(
+        from payload: ArraySlice<UInt8>,
+        foregroundCommand: String?
+    ) -> UUID? {
+        guard foregroundCommand == "claude",
+              let text = payloadText(payload) else { return nil }
+        let fields = text.split(separator: ";", omittingEmptySubsequences: false)
+        guard fields.count == 3,
+              fields[0] == "session",
+              fields[1] == Substring(payloadMarker),
+              fields[2].count == 36 else { return nil }
+        return UUID(uuidString: String(fields[2]))
+    }
+
     private static func payloadText(_ payload: ArraySlice<UInt8>) -> String? {
         guard payload.allSatisfy({ $0 >= 0x20 || $0 == 0x09 }),
               let text = String(bytes: payload, encoding: .utf8) else {
@@ -182,6 +199,18 @@ enum ClaudeIntegration {
             "Notification": [
         \(entries)
             ],
+            "SessionStart": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh",
+                    "args": ["session_started"],
+                    "timeout": 5
+                  }
+                ]
+              }
+            ],
             "UserPromptSubmit": [
               {
                 "hooks": [
@@ -224,11 +253,25 @@ enum ClaudeIntegration {
     }()
 
     /// Read stdin before exiting so Claude never races a closed hook input pipe.
-    /// The payload contains only an enum value, never prompt or tool content.
+    /// Only SessionStart extracts its official session_id; no branch reads prompt,
+    /// transcript, tool, or assistant content.
     private static let hookScript = """
     #!/bin/sh
-    cat >/dev/null
+    input="$(cat)"
     case "$1" in
+      session_started)
+        session_id="$(printf '%s' "$input" | /usr/bin/plutil -extract session_id raw -o - - 2>/dev/null || true)"
+        case "$session_id" in
+          ????????-????-????-????-????????????)
+            case "$session_id" in
+              *[!0123456789abcdefABCDEF-]*) ;;
+              *)
+                printf '{"terminalSequence":"\\\\u001b]777;session;mTerm Claude;%s\\\\u0007"}\\n' "$session_id"
+                ;;
+            esac
+            ;;
+        esac
+        ;;
       permission_prompt|idle_prompt|elicitation_dialog|agent_needs_input|agent_completed)
         printf '{"terminalSequence":"\\\\u001b]777;notify;mTerm Claude;%s\\\\u0007"}\\n' "$1"
         ;;

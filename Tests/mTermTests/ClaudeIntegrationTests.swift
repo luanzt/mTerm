@@ -50,6 +50,40 @@ final class ClaudeIntegrationTests: XCTestCase {
             ClaudeIntegration.turnCompletedPayload)))
     }
 
+    func testParsesClaudeSessionIdentityOnlyWhileClaudeOwnsForeground() {
+        let id = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let value = payload("session;mTerm Claude;\(id.uuidString.lowercased())")
+
+        XCTAssertEqual(
+            ClaudeIntegration.sessionID(
+                from: value,
+                foregroundCommand: "claude"),
+            id)
+        XCTAssertNil(ClaudeIntegration.sessionID(
+            from: value,
+            foregroundCommand: nil))
+        XCTAssertNil(ClaudeIntegration.sessionID(
+            from: value,
+            foregroundCommand: "codex"))
+    }
+
+    func testRejectsSpoofedAndMalformedClaudeSessionIdentityPayloads() {
+        let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        for value in [
+            "session;Other App;\(id)",
+            "session;mTerm Claude;not-a-uuid",
+            "session;mTerm Claude;\(id);extra",
+            "notify;mTerm Claude;\(id)",
+        ] {
+            XCTAssertNil(ClaudeIntegration.sessionID(
+                from: payload(value),
+                foregroundCommand: "claude"))
+        }
+        XCTAssertNil(ClaudeIntegration.sessionID(
+            from: ArraySlice(Array("session;mTerm Claude;\(id)".utf8) + [0x07]),
+            foregroundCommand: "claude"))
+    }
+
     func testWritesValidPluginAndExecutableScripts() throws {
         XCTAssertTrue(ClaudeIntegration.writeFiles())
 
@@ -73,6 +107,8 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertTrue(hooksText.contains("\"Stop\""))
         XCTAssertTrue(hooksText.contains("\"StopFailure\""))
         XCTAssertTrue(hooksText.contains("\"UserPromptSubmit\""))
+        XCTAssertTrue(hooksText.contains("\"SessionStart\""))
+        XCTAssertTrue(hooksText.contains("\"session_started\""))
         XCTAssertTrue(hooksText.contains("\"turn_started\""))
         XCTAssertTrue(hooksText.contains("\"turn_completed\""))
         XCTAssertTrue(hooksText.contains("\"turn_failed\""))
@@ -222,5 +258,50 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertEqual(
             object["terminalSequence"],
             "\u{001B}]777;state;mTerm Claude;turn_started\u{0007}")
+    }
+
+    func testSessionStartHookProducesPrivateSessionIdentitySequence() throws {
+        let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let data = try runHook(
+            argument: "session_started",
+            input: "{\"session_id\":\"\(id)\"}")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: String])
+
+        XCTAssertEqual(
+            object["terminalSequence"],
+            "\u{001B}]777;session;mTerm Claude;\(id)\u{0007}")
+    }
+
+    func testSessionStartHookEmitsNothingForMissingOrMalformedSessionID() throws {
+        for input in [
+            "{}",
+            "{\"session_id\":\"not-a-uuid\"}",
+            "{\"session_id\":\"zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz\"}",
+            "not-json",
+        ] {
+            XCTAssertTrue(try runHook(
+                argument: "session_started",
+                input: input).isEmpty)
+        }
+    }
+
+    private func runHook(argument: String, input: String) throws -> Data {
+        XCTAssertTrue(ClaudeIntegration.writeFiles())
+        let hook = ClaudeIntegration.pluginDirectory
+            .appendingPathComponent("scripts/notify.sh")
+        let process = Process()
+        let output = Pipe()
+        let stdin = Pipe()
+        process.executableURL = hook
+        process.arguments = [argument]
+        process.standardInput = stdin
+        process.standardOutput = output
+        try process.run()
+        stdin.fileHandleForWriting.write(Data(input.utf8))
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus, 0)
+        return output.fileHandleForReading.readDataToEndOfFile()
     }
 }
