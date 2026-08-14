@@ -3,9 +3,21 @@ import Combine
 import Sparkle
 import SwiftUI
 
+enum ApplicationWindowLifecycle {
+    static func shouldHide(
+        candidate: NSWindow,
+        mainWindow: NSWindow?
+    ) -> Bool {
+        candidate === mainWindow
+    }
+}
+
 @MainActor
-final class MTermAppDelegate: NSObject, NSApplicationDelegate {
-    private let workspace = WorkspaceStore()
+final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private static let mainWindowFrameAutosaveName = "mTerm.mainWindow"
+
+    private let workspace = WorkspaceStore(
+        snapshotStore: WorkspaceSnapshotStore())
     private let settings = AppSettings()
     private let terminalProcesses = TerminalProcessRegistry()
     private var window: NSWindow?
@@ -64,8 +76,15 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
         hosting.sizingOptions = []
         window.contentView = hosting
         window.contentMinSize = NSSize(width: 980, height: 620)
+        window.delegate = self
+        window.isReleasedWhenClosed = false
         installTitlebarToggle(in: window)
-        window.center()
+        let restoredFrame = window.setFrameUsingName(
+            Self.mainWindowFrameAutosaveName)
+        window.setFrameAutosaveName(Self.mainWindowFrameAutosaveName)
+        if !restoredFrame {
+            window.center()
+        }
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
@@ -88,10 +107,29 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard ApplicationWindowLifecycle.shouldHide(
+            candidate: sender,
+            mainWindow: window) else { return true }
+        NSApp.hide(nil)
+        return false
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        sender.unhide(nil)
+        window?.makeKeyAndOrderFront(nil)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        return true
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        workspace.flushSnapshot()
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
             self.keyDownMonitor = nil
