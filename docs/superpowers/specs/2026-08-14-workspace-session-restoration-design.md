@@ -1,7 +1,7 @@
 # Thiết kế: Khôi phục workspace và agent session
 
 **Ngày:** 2026-08-14
-**Trạng thái:** Đã duyệt hướng trong chat; chờ duyệt bản spec
+**Trạng thái:** Đã duyệt trong chat
 
 ## Mục tiêu
 
