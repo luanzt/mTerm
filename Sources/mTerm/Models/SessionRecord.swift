@@ -8,7 +8,6 @@ struct SessionRecord: Codable, Hashable, Identifiable {
 
     let id: UUID
     var title: String
-    var command: String
     var workingDirectory: String
     var workspaceID: WorkspaceFolder.ID?
     var createdAt: Date
@@ -22,7 +21,6 @@ struct SessionRecord: Codable, Hashable, Identifiable {
         SessionRecord(
             id: UUID(),
             title: title,
-            command: "",
             workingDirectory: workingDirectory,
             workspaceID: workspaceID,
             createdAt: .now,

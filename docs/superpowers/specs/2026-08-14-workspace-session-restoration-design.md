@@ -189,7 +189,9 @@ biết. Nếu một named thread không từng phát UUID trong pane, lưu valid
 name làm fallback vì `codex resume` hỗ trợ UUID hoặc session name. Đồng thời mở
 rộng metadata-only SQLite lookup hiện có: resolve exact name + current CWD sang
 UUID nếu chỉ có một row hợp lệ; nếu lookup không duy nhất thì giữ name locator.
-Không mở rollout JSONL.
+Name locator giữ nguyên raw OSC value đã validate; title hiển thị vẫn normalize
+riêng. Lệnh name dùng `codex resume -- <exact-name>` để tên bắt đầu bằng `-`
+không bị parse thành option. Không mở rollout JSONL.
 
 Terminal-title update sau `/resume`, fork hoặc thread switch cập nhật locator
 của pane tương ứng.
@@ -286,8 +288,9 @@ next launch → decode + repair WorkspaceSnapshot
 - Unsupported/corrupt snapshot fallback về một shell mới và log lỗi; app không
   crash.
 - UUID validation và foreground-command checks bảo vệ private identity OSC.
-- Codex name được normalize, giới hạn độ dài và shell-escape; snapshot không
-  bao giờ chứa raw arbitrary launch command.
+- Codex display title được normalize/giới hạn riêng; exact name locator được
+  validate, shell-escape và đặt sau `--`; snapshot không bao giờ chứa raw
+  arbitrary launch command.
 - Missing agent history để CLI tự báo lỗi trong terminal; pane vẫn trở về shell
   và dùng bình thường.
 - Không persist hoặc log prompt, assistant output, transcript contents, auth
@@ -309,8 +312,8 @@ next launch → decode + repair WorkspaceSnapshot
   `activeAgent`; agent identity update thay đúng locator của đúng pane.
 - Claude SessionStart hook phát đúng private OSC cho UUID hợp lệ và từ chối JSON
   thiếu/sai ID; parser yêu cầu foreground `claude`.
-- Codex UUID vẫn còn sau manual title update; name fallback được normalize và
-  exact UUID luôn được ưu tiên.
+- Codex UUID vẫn còn sau manual title update; name fallback giữ exact validated
+  OSC value dù display title được normalize, và exact UUID luôn được ưu tiên.
 - Restore command builder shell-escape locator, không chấp nhận control
   characters và không tạo raw arbitrary command.
 - One-shot restore intent chỉ fire sau first shell idle và không fire lần hai.

@@ -261,7 +261,7 @@ func restorationIntent(for id: SessionRecord.ID) -> AgentResumeDescriptor?
       "claude --resume '\(id.uuidString.lowercased())'")
   XCTAssertEqual(
       TerminalSessionRestoration.command(for: .codex(locator: .name("Client's API"))),
-      "codex resume 'Client'\"'\"'s API'")
+      "codex resume -- 'Client'\"'\"'s API'")
   XCTAssertNil(TerminalSessionRestoration.command(for: .codex(locator: .name("bad\nname"))))
   ```
 
@@ -269,7 +269,7 @@ func restorationIntent(for id: SessionRecord.ID) -> AgentResumeDescriptor?
 
 - [ ] Run `swift test --filter 'TerminalSessionRestorationTests|WorkspaceStoreTests'`. Expected: compilation/test failure because command builder and lifecycle methods do not exist.
 
-- [ ] Implement shell quoting as single-quoted POSIX text with embedded `'` encoded as `'"'"'`; reject empty names and all control/newline characters. UUIDs are emitted lowercase. Keep executable/subcommand tokens hard-coded rather than persisting arbitrary commands.
+- [ ] Implement shell quoting as single-quoted POSIX text with embedded `'` encoded as `'"'"'`; reject empty names and all control/newline characters, and place arbitrary Codex names after a `--` option delimiter. UUIDs are emitted lowercase. Keep executable/subcommand tokens hard-coded rather than persisting arbitrary commands.
 
 - [ ] In `WorkspaceStore`, add a private runtime `AgentRestorationPhase` dictionary alongside the stable descriptor dictionary from Task 3. Restored descriptors begin `.pending`; newly observed live identities are `.acknowledged`. Update `setForeground` with these exact rules:
 
@@ -356,13 +356,13 @@ typealias CodexThreadIDLookup = @Sendable (String, String) async -> UUID?
 
 - [ ] Create SQLite fixtures with `threads(id, title, name, cwd)`. Test that an exact name plus standardized CWD returns its UUID only when exactly one row matches; duplicate matches, different CWD, blank name, malformed UUID, absent database, and a schema without `cwd` all return `nil` without crashing. Keep existing title lookup tests passing.
 
-- [ ] Add store tests proving: UUID terminal title persists `.codex(.threadID(id))` immediately; async title resolution/manual rename cancellation cannot erase that UUID; a normalized named title persists `.name(name)` before lookup; a unique metadata result upgrades it to `.threadID`; ambiguous lookup retains the exact name; a later UUID/title after `/resume` replaces the old locator; titles outside a foreground Codex process never create locators.
+- [ ] Add store tests proving: UUID terminal title persists `.codex(.threadID(id))` immediately; async title resolution/manual rename cancellation cannot erase that UUID; a validated named title persists its exact raw name separately from the normalized display title before lookup; a unique metadata result upgrades it to `.threadID`; ambiguous lookup retains the exact name; a later UUID/title after `/resume` replaces the old locator; titles outside a foreground Codex process never create locators.
 
 - [ ] Run `swift test --filter 'CodexThreadTitleResolverTests|WorkspaceStoreTests'`. Expected: new APIs and lifecycle behavior fail.
 
 - [ ] Refactor `codexThreadIDs` into transient title-lookup state that is separate from the stable descriptor dictionary. `cancelCodexTitleResolution` may cancel tasks and transient display metadata only; it must never remove a stable resume locator.
 
-- [ ] On a bare UUID OSC title, store the UUID descriptor synchronously before starting the existing automatic-title lookup. On a normalized non-UUID Codex title, store the exact-name fallback and launch the injected name+CWD lookup; upgrade only if the session remains foreground Codex and still owns that same name locator when the async result returns.
+- [ ] On a bare UUID OSC title, store the UUID descriptor synchronously before starting the existing automatic-title lookup. On a validated non-UUID Codex title, store the raw exact-name fallback independently of its normalized display title and launch the injected name+CWD lookup; upgrade only if the session remains foreground Codex and still owns that same name locator when the async result returns.
 
 - [ ] Implement SQLite lookup without interpolating the arbitrary name/CWD into SQL. Read metadata rows with sqlite's JSON output, decode them in Swift, standardize paths, filter exact values, validate UUIDs, and return only a unique match. Do not open rollout/transcript files.
 

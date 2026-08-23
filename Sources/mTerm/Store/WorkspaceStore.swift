@@ -15,17 +15,26 @@ extension Notification.Name {
 @MainActor
 final class WorkspaceStore: ObservableObject {
     typealias CodexTitleLookup = @Sendable (UUID) async -> String?
+    typealias CodexThreadIDLookup = @Sendable (String, String) async -> UUID?
 
-    @Published private(set) var sessions: [SessionRecord]
+    @Published private(set) var sessions: [SessionRecord] {
+        didSet { durableStateDidChange() }
+    }
     @Published private(set) var workspaces: [WorkspaceFolder]
-    @Published var selectedSessionID: SessionRecord.ID?
+    @Published var selectedSessionID: SessionRecord.ID? {
+        didSet { durableStateDidChange() }
+    }
     @Published var draggedSessionID: SessionRecord.ID?
     /// Non-nil only when a visible pane header initiated the current session
     /// drag. Sidebar drags keep their existing open/replace semantics.
     @Published private(set) var draggedPaneSessionID: SessionRecord.ID?
     @Published var draggedWorkspaceID: WorkspaceFolder.ID?
-    @Published var isSidebarVisible = true
-    @Published private(set) var grid: PaneGrid = PaneGrid(columns: [])
+    @Published var isSidebarVisible = true {
+        didSet { durableStateDidChange() }
+    }
+    @Published private(set) var grid: PaneGrid = PaneGrid(columns: []) {
+        didSet { durableStateDidChange() }
+    }
     /// True while the user is dragging a pane divider. Deliberately NOT
     /// `@Published`: terminals defer the child PTY winsize via a NotificationCenter
     /// event (see `beginPaneResize`/`endPaneResize`) rather than a SwiftUI binding,
@@ -57,21 +66,37 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var agentSessionTitles: [SessionRecord.ID: String] = [:]
     /// User-renamed sessions always display their stable title instead of an
     /// agent-supplied transient OSC title.
-    private var manuallyRenamedSessionIDs: Set<SessionRecord.ID> = []
+    private var manuallyRenamedSessionIDs: Set<SessionRecord.ID> = [] {
+        didSet { durableStateDidChange() }
+    }
 
     /// Grid to return to when un-maximizing. Non-nil exactly while one pane is
     /// maximized (see `toggleMaximize`). Not `@Published`: it always changes in
     /// lockstep with `grid`, which already drives view updates.
-    private var savedGrid: PaneGrid?
+    private var savedGrid: PaneGrid? {
+        didSet { durableStateDidChange() }
+    }
 
-    private var sessionSequence = 0
+    private var sessionSequence = 0 {
+        didSet { durableStateDidChange() }
+    }
     private let sessionsKey = "edev.workspace.sessions"
     private let workspacesKey = "edev.workspace.folders"
     private let defaults: UserDefaults
+    private let snapshotStore: WorkspaceSnapshotStore?
     private let codexTitleLookup: CodexTitleLookup
+    private let codexThreadIDLookup: CodexThreadIDLookup
+    private var allowsSnapshotWrites: Bool
+    private var isHydratingSnapshot = true
+    private var agentResumeDescriptors: [SessionRecord.ID: AgentResumeDescriptor] = [:] {
+        didSet { durableStateDidChange() }
+    }
+    private var agentRestorationPhases: [SessionRecord.ID: AgentRestorationPhase] = [:]
     private var dragEndMonitor: Any?
     private var codexTitleResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
     private var codexThreadIDs: [SessionRecord.ID: UUID] = [:]
+    private var codexLocatorResolutionTasks: [SessionRecord.ID: Task<Void, Never>] = [:]
+    private var codexLocatorNames: [SessionRecord.ID: String] = [:]
 
     /// App-level side effects stay outside the store; the store resolves the
     /// session before forwarding a trusted agent attention event.
@@ -81,18 +106,63 @@ final class WorkspaceStore: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
+        snapshotStore: WorkspaceSnapshotStore? = nil,
         codexTitleLookup: @escaping CodexTitleLookup = {
             await CodexThreadTitleResolver.title(for: $0)
+        },
+        codexThreadIDLookup: @escaping CodexThreadIDLookup = { name, directory in
+            await CodexThreadTitleResolver.threadID(
+                forExactName: name,
+                workingDirectory: directory)
         }
     ) {
         self.defaults = defaults
+        self.snapshotStore = snapshotStore
         self.codexTitleLookup = codexTitleLookup
-        sessions = [SessionRecord.shell()]
+        self.codexThreadIDLookup = codexThreadIDLookup
         defaults.removeObject(forKey: sessionsKey)   // clear any stale saved state
-        workspaces = Self.decode([WorkspaceFolder].self, from: defaults, key: workspacesKey) ?? []
+        let restoredWorkspaces = Self.decode(
+            [WorkspaceFolder].self,
+            from: defaults,
+            key: workspacesKey) ?? []
+        workspaces = restoredWorkspaces
         defaults.removeObject(forKey: "edev.workspace.history")
-        selectedSessionID = sessions.first?.id
-        grid = selectedSessionID.map(PaneGrid.single) ?? PaneGrid(columns: [])
+
+        let hadSnapshotFile = snapshotStore?.containsStoredSnapshot ?? false
+        let restoredSnapshot = snapshotStore?.load()?.validated(
+            validWorkspaceIDs: Set(restoredWorkspaces.map(\.id)),
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
+        allowsSnapshotWrites = !hadSnapshotFile || restoredSnapshot != nil
+
+        if let restoredSnapshot {
+            sessions = restoredSnapshot.sessions.map(\.sessionRecord)
+            selectedSessionID = restoredSnapshot.selectedSessionID
+            grid = restoredSnapshot.grid.repaired(
+                validSessionIDs: sessions.map(\.id),
+                fallbackID: restoredSnapshot.selectedSessionID ?? sessions.first?.id)
+            savedGrid = restoredSnapshot.savedGrid?.repaired(
+                validSessionIDs: sessions.map(\.id),
+                fallbackID: nil)
+            isSidebarVisible = restoredSnapshot.isSidebarVisible
+            sessionSequence = restoredSnapshot.sessionSequence
+            manuallyRenamedSessionIDs = Set(
+                restoredSnapshot.sessions
+                    .filter(\.wasManuallyRenamed)
+                    .map(\.id))
+            agentResumeDescriptors = Dictionary(
+                uniqueKeysWithValues: restoredSnapshot.sessions.compactMap { session in
+                    session.activeAgent.map { (session.id, $0) }
+                })
+            agentRestorationPhases = Dictionary(
+                uniqueKeysWithValues: agentResumeDescriptors.keys.map {
+                    ($0, AgentRestorationPhase.pending)
+                })
+        } else {
+            sessions = [SessionRecord.shell()]
+            selectedSessionID = sessions.first?.id
+            grid = selectedSessionID.map(PaneGrid.single) ?? PaneGrid(columns: [])
+        }
+        isHydratingSnapshot = false
     }
 
     var selectedSession: SessionRecord? {
@@ -259,8 +329,11 @@ final class WorkspaceStore: ObservableObject {
         agentWorkingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
+        agentResumeDescriptors.removeValue(forKey: session.id)
+        agentRestorationPhases.removeValue(forKey: session.id)
         if findSessionID == session.id { findSessionID = nil }
         cancelCodexTitleResolution(for: session.id)
+        cancelCodexLocatorResolution(for: session.id)
         sessions.remove(at: index)
         grid.remove(session.id)
         if selectedSessionID == session.id {
@@ -347,6 +420,7 @@ final class WorkspaceStore: ObservableObject {
         agentSessionTitles.removeValue(forKey: id)
         if command != "codex" {
             cancelCodexTitleResolution(for: id)
+            cancelCodexLocatorResolution(for: id)
         }
 
         let isClaude = command == "claude"
@@ -366,6 +440,7 @@ final class WorkspaceStore: ObservableObject {
         // Starting an interactive agent does not imply it already has a prompt
         // to process. Submission is reported separately from TerminalHostView.
         agentWorkingSessionIDs.remove(id)
+        updateAgentRestorationState(for: id, foregroundCommand: command)
     }
 
     /// Starts (or resumes) an active agent's work. Claude reports this through
@@ -383,28 +458,38 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
-        guard session(for: id) != nil,
-              !manuallyRenamedSessionIDs.contains(id) else { return }
-
-        if codexSessionIDs.contains(id),
-           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
-            resolveCodexTitle(for: id, threadID: threadID)
-            return
-        }
+        guard session(for: id) != nil else { return }
 
         let isClaude = claudeSessionIDs.contains(id)
-        guard isClaude || codexSessionIDs.contains(id),
-              let title = AgentSessionTitle.normalize(
-                rawTitle,
-                strippingLeadingDecoration: isClaude),
-              agentSessionTitles[id] != title else {
+        let isCodex = codexSessionIDs.contains(id)
+        guard isClaude || isCodex else { return }
+
+        if isCodex,
+           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
+            recordCodexLocator(for: id, locator: .threadID(threadID))
+            cancelCodexLocatorResolution(for: id)
+            if !manuallyRenamedSessionIDs.contains(id) {
+                resolveCodexTitle(for: id, threadID: threadID)
+            }
             return
         }
-        if codexSessionIDs.contains(id) {
+
+        guard let title = AgentSessionTitle.normalize(
+            rawTitle,
+            strippingLeadingDecoration: isClaude) else {
+            return
+        }
+        if isCodex {
+            // Display normalization may collapse whitespace or truncate a long
+            // title. Resume identity must instead preserve the exact validated
+            // Codex name emitted by the TUI.
+            resolveCodexLocator(for: id, exactName: rawTitle)
             // A real OSC title is a manual `/rename`/`--name` value and wins
             // over any in-flight automatic-title metadata lookup.
             cancelCodexTitleResolution(for: id)
         }
+        guard !manuallyRenamedSessionIDs.contains(id),
+              agentSessionTitles[id] != title else { return }
         agentSessionTitles[id] = title
     }
 
@@ -472,6 +557,53 @@ final class WorkspaceStore: ObservableObject {
 
         let path = url.standardizedFileURL.path
         return path.hasPrefix("/") ? path : nil
+    }
+
+    private func recordCodexLocator(
+        for sessionID: SessionRecord.ID,
+        locator: CodexResumeLocator
+    ) {
+        guard codexSessionIDs.contains(sessionID),
+              session(for: sessionID) != nil else { return }
+        agentRestorationPhases[sessionID] = .acknowledged
+        agentResumeDescriptors[sessionID] = .codex(locator: locator)
+    }
+
+    private func resolveCodexLocator(
+        for sessionID: SessionRecord.ID,
+        exactName: String
+    ) {
+        guard let session = session(for: sessionID),
+              codexSessionIDs.contains(sessionID) else { return }
+
+        cancelCodexLocatorResolution(for: sessionID)
+        codexLocatorNames[sessionID] = exactName
+        if case .codex(.threadID) = agentResumeDescriptors[sessionID] {
+            // `/rename` must not downgrade an exact UUID to a name. The metadata
+            // lookup can still replace it if this title belongs to a switched
+            // thread with a distinct UUID.
+            agentRestorationPhases[sessionID] = .acknowledged
+        } else {
+            recordCodexLocator(for: sessionID, locator: .name(exactName))
+        }
+
+        let lookup = codexThreadIDLookup
+        let workingDirectory = session.workingDirectory
+        codexLocatorResolutionTasks[sessionID] = Task { [weak self] in
+            let threadID = await lookup(exactName, workingDirectory)
+            guard let self,
+                  codexSessionIDs.contains(sessionID),
+                  codexLocatorNames[sessionID] == exactName else { return }
+            codexLocatorResolutionTasks[sessionID] = nil
+            codexLocatorNames[sessionID] = nil
+            guard let threadID else { return }
+            recordCodexLocator(for: sessionID, locator: .threadID(threadID))
+        }
+    }
+
+    private func cancelCodexLocatorResolution(for sessionID: SessionRecord.ID) {
+        codexLocatorResolutionTasks.removeValue(forKey: sessionID)?.cancel()
+        codexLocatorNames.removeValue(forKey: sessionID)
     }
 
     private func resolveCodexTitle(
@@ -754,6 +886,106 @@ final class WorkspaceStore: ObservableObject {
 
     private func persist() {
         Self.encode(workspaces, to: defaults, key: workspacesKey)
+    }
+
+    func restorationIntent(for id: SessionRecord.ID) -> AgentResumeDescriptor? {
+        agentResumeDescriptors[id]
+    }
+
+    func reportRestorationLaunched(_ id: SessionRecord.ID) {
+        guard agentResumeDescriptors[id] != nil,
+              agentRestorationPhases[id] == .pending else { return }
+        agentRestorationPhases[id] = .launched
+    }
+
+    func reportClaudeSessionIdentity(
+        _ id: SessionRecord.ID,
+        sessionID: UUID
+    ) {
+        guard session(for: id) != nil,
+              claudeSessionIDs.contains(id) else { return }
+        agentRestorationPhases[id] = .acknowledged
+        agentResumeDescriptors[id] = .claude(sessionID: sessionID)
+    }
+
+    func flushSnapshot() {
+        guard allowsSnapshotWrites else { return }
+        snapshotStore?.flush(makeSnapshot())
+    }
+
+    private func durableStateDidChange() {
+        guard !isHydratingSnapshot, let snapshotStore else { return }
+        allowsSnapshotWrites = true
+        snapshotStore.schedule { [weak self] in self?.makeSnapshot() }
+    }
+
+    private func updateAgentRestorationState(
+        for id: SessionRecord.ID,
+        foregroundCommand: String?
+    ) {
+        guard let descriptor = agentResumeDescriptors[id] else {
+            agentRestorationPhases.removeValue(forKey: id)
+            return
+        }
+
+        let expectedCommand: String
+        switch descriptor {
+        case .claude:
+            expectedCommand = "claude"
+        case .codex:
+            expectedCommand = "codex"
+        }
+
+        switch agentRestorationPhases[id] {
+        case .pending:
+            // The initial shell-idle marker is what triggers command injection.
+            // It must not look like the restored agent exited.
+            return
+        case .launched:
+            guard foregroundCommand == expectedCommand else {
+                agentRestorationPhases[id] = .failed
+                agentResumeDescriptors.removeValue(forKey: id)
+                return
+            }
+        case .acknowledged:
+            guard foregroundCommand == expectedCommand else {
+                agentRestorationPhases.removeValue(forKey: id)
+                agentResumeDescriptors.removeValue(forKey: id)
+                return
+            }
+        case .failed:
+            // Unreachable in practice: .failed is only ever assigned together
+            // with descriptor removal (see the .launched arm above), so the
+            // guard at the top of this function returns before we get here.
+            // Retained for exhaustiveness without changing behavior.
+            agentResumeDescriptors.removeValue(forKey: id)
+        case nil:
+            // A descriptor created by an identity event is marked acknowledged
+            // in that same event. This only covers defensive legacy state.
+            if foregroundCommand != expectedCommand {
+                agentResumeDescriptors.removeValue(forKey: id)
+            }
+        }
+    }
+
+    private func makeSnapshot() -> WorkspaceSnapshot {
+        WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: sessions.map { session in
+                SessionSnapshot(
+                    id: session.id,
+                    stableTitle: session.title,
+                    workingDirectory: session.workingDirectory,
+                    workspaceID: session.workspaceID,
+                    createdAt: session.createdAt,
+                    wasManuallyRenamed: manuallyRenamedSessionIDs.contains(session.id),
+                    activeAgent: agentResumeDescriptors[session.id])
+            },
+            grid: PaneGridSnapshot(grid),
+            savedGrid: savedGrid.map(PaneGridSnapshot.init),
+            selectedSessionID: selectedSessionID,
+            isSidebarVisible: isSidebarVisible,
+            sessionSequence: sessionSequence)
     }
 
     private func makeSession(workingDirectory: String? = nil,

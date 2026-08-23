@@ -970,4 +970,466 @@ final class WorkspaceStoreTests: XCTestCase {
         store.endPaneResize()
         XCTAssertFalse(store.isResizingPanes)
     }
+
+    func testInjectedSnapshotStoreRestoresDurableWorkspaceState() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-roundtrip-\(UUID().uuidString)",
+                                  isDirectory: true)
+        let project = root.appendingPathComponent("project", isDirectory: true)
+        try manager.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: project.path)
+        defaults.set(
+            try JSONEncoder().encode([folder]),
+            forKey: "edev.workspace.folders")
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 60)
+        let original = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        let first = original.sessions[0].id
+        original.renameSession(first, to: "Pinned shell")
+        original.setWorkingDirectory(first, report: project.path)
+        original.createSession(in: folder)
+        let second = original.sessions[1].id
+        original.createSession()
+        let hidden = original.sessions[2].id
+        original.openSingle(first)
+        original.place(second, onPaneWith: first, zone: .right)
+        original.resizeColumn(pairLeadingIndex: 0, leadingFraction: 0.35)
+        original.focusGridPane(at: 1)
+        original.toggleSidebar()
+        original.toggleMaximize(second)
+
+        original.flushSnapshot()
+        let restored = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+
+        XCTAssertEqual(restored.sessions.map(\.id), [first, second, hidden])
+        XCTAssertEqual(restored.sessions[0].title, "Pinned shell")
+        XCTAssertEqual(restored.sessions[0].workingDirectory, project.path)
+        XCTAssertEqual(restored.sessions[1].workspaceID, folder.id)
+        XCTAssertEqual(restored.grid.paneIDs, [second])
+        XCTAssertEqual(restored.selectedSessionID, second)
+        XCTAssertFalse(restored.isSidebarVisible)
+        XCTAssertTrue(restored.isMaximized)
+
+        restored.toggleMaximize(second)
+        XCTAssertEqual(restored.grid.paneIDs, [first, second])
+        XCTAssertEqual(restored.grid.columns[0].widthFraction, 0.35, accuracy: 0.000_001)
+        XCTAssertEqual(restored.grid.columns[1].widthFraction, 0.65, accuracy: 0.000_001)
+        XCTAssertFalse(restored.grid.paneIDs.contains(hidden))
+
+        restored.setForeground(first, command: "claude")
+        restored.setAgentTitle(first, title: "Transient agent title")
+        XCTAssertEqual(restored.displayTitle(for: restored.sessions[0]), "Pinned shell")
+
+        restored.createSession()
+        XCTAssertEqual(restored.sessions.last?.title, "Terminal 3")
+    }
+
+    func testDurableMutationSchedulesSnapshotWithoutExplicitFlush() async throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-autosave-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 0.01)
+        let store = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+
+        store.toggleSidebar()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let restored = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        XCTAssertFalse(restored.isSidebarVisible)
+    }
+
+    func testCorruptSnapshotIsPreservedUntilDurableMutation() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-corrupt-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let malformed = Data("{ broken snapshot".utf8)
+        try malformed.write(to: fileURL)
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+
+        XCTAssertEqual(store.sessions.count, 1)
+        store.flushSnapshot()
+        XCTAssertEqual(try Data(contentsOf: fileURL), malformed)
+
+        store.toggleSidebar()
+        store.flushSnapshot()
+        let decoded = try JSONDecoder().decode(
+            WorkspaceSnapshot.self,
+            from: Data(contentsOf: fileURL))
+        XCTAssertFalse(decoded.isSidebarVisible)
+    }
+
+    func testUnsupportedSnapshotIsPreservedUntilDurableMutation() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-unsupported-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let id = UUID()
+        let unsupported = WorkspaceSnapshot(
+            schemaVersion: 99,
+            sessions: [sessionSnapshot(id: id, directory: "/tmp")],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [id], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: id,
+            isSidebarVisible: true,
+            sessionSequence: 1)
+        let originalData = try JSONEncoder().encode(unsupported)
+        try originalData.write(to: fileURL)
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: WorkspaceSnapshotStore(fileURL: fileURL))
+
+        store.flushSnapshot()
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(store.sessions.count, 1)
+    }
+
+    func testRestoreFallsBackToHomeForMissingDirectoryAndKeepsAgentLocator() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-workspace-agent-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let paneID = UUID()
+        let claudeID = UUID()
+        let snapshot = WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [
+                SessionSnapshot(
+                    id: paneID,
+                    stableTitle: "Claude",
+                    workingDirectory: root.appendingPathComponent("missing").path,
+                    workspaceID: nil,
+                    createdAt: Date(timeIntervalSince1970: 1),
+                    wasManuallyRenamed: false,
+                    activeAgent: .claude(sessionID: claudeID)),
+            ],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [paneID], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: paneID,
+            isSidebarVisible: true,
+            sessionSequence: 1)
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        snapshotStore.flush(snapshot)
+
+        let restored = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+
+        XCTAssertEqual(
+            restored.sessions[0].workingDirectory,
+            manager.homeDirectoryForCurrentUser.path)
+        XCTAssertEqual(
+            restored.restorationIntent(for: paneID),
+            .claude(sessionID: claudeID))
+
+        restored.flushSnapshot()
+        XCTAssertEqual(
+            snapshotStore.load()?.sessions[0].activeAgent,
+            .claude(sessionID: claudeID))
+    }
+
+    func testFirstShellIdlePreservesPendingRestorationIntent() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: UUID()))
+        defer { fixture.remove() }
+
+        fixture.store.setForeground(fixture.paneID, command: nil)
+
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            fixture.activeAgent)
+    }
+
+    func testLaunchedRestorationAcknowledgesAndReplacesClaudeIdentity() throws {
+        let oldID = UUID()
+        let newID = UUID()
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: oldID))
+        defer { fixture.remove() }
+
+        fixture.store.reportRestorationLaunched(fixture.paneID)
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.reportClaudeSessionIdentity(fixture.paneID, sessionID: newID)
+
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            .claude(sessionID: newID))
+        fixture.store.flushSnapshot()
+        XCTAssertEqual(
+            fixture.snapshotStore.load()?.sessions[0].activeAgent,
+            .claude(sessionID: newID))
+    }
+
+    func testLaunchedRestorationReturningToIdleBeforeIdentityClearsLocator() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .claude(sessionID: UUID()))
+        defer { fixture.remove() }
+
+        fixture.store.reportRestorationLaunched(fixture.paneID)
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.setForeground(fixture.paneID, command: nil)
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+        fixture.store.flushSnapshot()
+        XCTAssertNil(fixture.snapshotStore.load()?.sessions[0].activeAgent)
+    }
+
+    func testAcknowledgedLiveClaudeExitClearsLocator() throws {
+        let fixture = try makeRestorationFixture(activeAgent: nil)
+        defer { fixture.remove() }
+        let claudeID = UUID()
+
+        fixture.store.setForeground(fixture.paneID, command: "claude")
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: claudeID)
+        XCTAssertEqual(
+            fixture.store.restorationIntent(for: fixture.paneID),
+            .claude(sessionID: claudeID))
+
+        fixture.store.setForeground(fixture.paneID, command: nil)
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    func testClaudeIdentityIsIgnoredUnlessClaudeOwnsForeground() throws {
+        let fixture = try makeRestorationFixture(activeAgent: nil)
+        defer { fixture.remove() }
+
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: UUID())
+        fixture.store.setForeground(fixture.paneID, command: "codex")
+        fixture.store.reportClaudeSessionIdentity(
+            fixture.paneID,
+            sessionID: UUID())
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    func testClosingSessionRemovesPendingRestorationState() throws {
+        let fixture = try makeRestorationFixture(
+            activeAgent: .codex(locator: .name("Pending thread")))
+        defer { fixture.remove() }
+        let session = try XCTUnwrap(fixture.store.session(for: fixture.paneID))
+
+        fixture.store.close(session)
+
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
+    func testCodexUUIDBecomesStableLocatorBeforeTitleLookupCompletes() async {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return "Automatic title"
+            },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testCodexRenameCannotEraseKnownThreadUUID() {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+        store.setAgentTitle(paneID, title: "Renamed conversation")
+        store.renameSession(paneID, to: "Pinned pane")
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testCodexNameIsStoredExactlyWhileDisplayTitleIsNormalized() async {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return nil
+            })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "  Client   API  ")
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .name("  Client   API  ")))
+        XCTAssertEqual(
+            store.displayTitle(for: store.sessions[0]),
+            "Client API")
+    }
+
+    func testUniqueCodexNameLookupUpgradesFallbackToThreadUUID() async {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { name, directory in
+                guard name == "Client API", !directory.isEmpty else { return nil }
+                return threadID
+            })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Client API")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+    }
+
+    func testAmbiguousCodexNameLookupKeepsExactNameFallback() async {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Ambiguous thread")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .name("Ambiguous thread")))
+    }
+
+    func testLaterCodexUUIDReplacesPreviousNameLocatorAndClearsOnExit() {
+        let threadID = UUID()
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in nil })
+        let paneID = store.sessions[0].id
+
+        store.setForeground(paneID, command: "codex")
+        store.setAgentTitle(paneID, title: "Named thread")
+        store.setAgentTitle(paneID, title: threadID.uuidString)
+        XCTAssertEqual(
+            store.restorationIntent(for: paneID),
+            .codex(locator: .threadID(threadID)))
+
+        store.setForeground(paneID, command: nil)
+        XCTAssertNil(store.restorationIntent(for: paneID))
+    }
+
+    func testCodexTitleOutsideForegroundNeverCreatesResumeLocator() {
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            codexTitleLookup: { _ in nil },
+            codexThreadIDLookup: { _, _ in UUID() })
+        let paneID = store.sessions[0].id
+
+        store.setAgentTitle(paneID, title: UUID().uuidString)
+        store.setAgentTitle(paneID, title: "Named thread")
+
+        XCTAssertNil(store.restorationIntent(for: paneID))
+    }
+
+    private func sessionSnapshot(
+        id: UUID,
+        directory: String,
+        activeAgent: AgentResumeDescriptor? = nil
+    ) -> SessionSnapshot {
+        SessionSnapshot(
+            id: id,
+            stableTitle: "Terminal 1",
+            workingDirectory: directory,
+            workspaceID: nil,
+            createdAt: Date(timeIntervalSince1970: 0),
+            wasManuallyRenamed: false,
+            activeAgent: activeAgent)
+    }
+
+    private func makeRestorationFixture(
+        activeAgent: AgentResumeDescriptor?
+    ) throws -> RestorationFixture {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-restoration-state-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let fileURL = root.appendingPathComponent("workspace-v1.json")
+        let paneID = UUID()
+        let snapshotStore = WorkspaceSnapshotStore(fileURL: fileURL)
+        snapshotStore.flush(WorkspaceSnapshot(
+            schemaVersion: WorkspaceSnapshot.currentSchemaVersion,
+            sessions: [sessionSnapshot(
+                id: paneID,
+                directory: root.path,
+                activeAgent: activeAgent)],
+            grid: PaneGridSnapshot(columns: [
+                .init(panes: [paneID], widthFraction: 1, rowFraction: 0.5),
+            ]),
+            savedGrid: nil,
+            selectedSessionID: paneID,
+            isSidebarVisible: true,
+            sessionSequence: 1))
+        let store = WorkspaceStore(
+            defaults: UserDefaults(suiteName: UUID().uuidString)!,
+            snapshotStore: snapshotStore)
+        return RestorationFixture(
+            root: root,
+            paneID: paneID,
+            activeAgent: activeAgent,
+            store: store,
+            snapshotStore: snapshotStore)
+    }
+
+    private struct RestorationFixture {
+        let root: URL
+        let paneID: UUID
+        let activeAgent: AgentResumeDescriptor?
+        let store: WorkspaceStore
+        let snapshotStore: WorkspaceSnapshotStore
+
+        func remove() {
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
 }
