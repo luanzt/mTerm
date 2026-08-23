@@ -94,7 +94,6 @@ struct SessionSnapshot: Codable, Equatable {
         SessionRecord(
             id: id,
             title: stableTitle,
-            command: "",
             workingDirectory: workingDirectory,
             workspaceID: workspaceID,
             createdAt: createdAt,

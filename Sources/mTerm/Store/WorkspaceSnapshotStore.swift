@@ -33,7 +33,10 @@ final class WorkspaceSnapshotStore {
         return try? JSONDecoder().decode(WorkspaceSnapshot.self, from: data)
     }
 
-    func schedule(_ snapshot: WorkspaceSnapshot) {
+    /// Builds the snapshot lazily inside the debounced task so a burst of
+    /// mutations (e.g. a divider-drag stream) only pays the snapshot cost once,
+    /// when the write actually happens — not on every intermediate frame.
+    func schedule(_ makeSnapshot: @escaping @MainActor () -> WorkspaceSnapshot?) {
         pendingWrite?.cancel()
         let delay = UInt64(debounceInterval * 1_000_000_000)
         pendingWrite = Task { @MainActor [weak self] in
@@ -44,6 +47,7 @@ final class WorkspaceSnapshotStore {
             }
             guard !Task.isCancelled, let self else { return }
             pendingWrite = nil
+            guard let snapshot = makeSnapshot() else { return }
             write(snapshot)
         }
     }

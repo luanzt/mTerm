@@ -132,22 +132,18 @@ enum CodexThreadTitleResolver {
         guard manager.isExecutableFile(atPath: sqliteExecutable.path),
               let candidates = try? manager.contentsOfDirectory(
                 at: codexHome,
-                includingPropertiesForKeys: [.contentModificationDateKey],
+                includingPropertiesForKeys: nil,
                 options: [.skipsHiddenFiles]) else {
             return nil
         }
 
+        // Unlike readTitle, the outcome here depends only on global uniqueness
+        // (exactly one distinct matching UUID across all databases), so scan
+        // order is irrelevant and recency sorting would be pure overhead.
         let databases = candidates
             .filter {
                 $0.lastPathComponent.hasPrefix("state_")
                     && $0.pathExtension == "sqlite"
-            }
-            .sorted {
-                let lhs = (try? $0.resourceValues(
-                    forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                let rhs = (try? $1.resourceValues(
-                    forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-                return lhs > rhs
             }
         let expectedDirectory = URL(fileURLWithPath: workingDirectory)
             .standardizedFileURL.path

@@ -80,7 +80,6 @@ final class WorkspaceSnapshotTests: XCTestCase {
 
         XCTAssertEqual(record.id, id)
         XCTAssertEqual(record.title, "Restored")
-        XCTAssertEqual(record.command, "")
         XCTAssertEqual(record.workingDirectory, "/tmp/project")
         XCTAssertEqual(record.workspaceID, snapshot.workspaceID)
         XCTAssertEqual(record.createdAt, createdAt)

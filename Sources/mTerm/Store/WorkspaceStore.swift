@@ -916,7 +916,7 @@ final class WorkspaceStore: ObservableObject {
     private func durableStateDidChange() {
         guard !isHydratingSnapshot, let snapshotStore else { return }
         allowsSnapshotWrites = true
-        snapshotStore.schedule(makeSnapshot())
+        snapshotStore.schedule { [weak self] in self?.makeSnapshot() }
     }
 
     private func updateAgentRestorationState(
@@ -954,6 +954,10 @@ final class WorkspaceStore: ObservableObject {
                 return
             }
         case .failed:
+            // Unreachable in practice: .failed is only ever assigned together
+            // with descriptor removal (see the .launched arm above), so the
+            // guard at the top of this function returns before we get here.
+            // Retained for exhaustiveness without changing behavior.
             agentResumeDescriptors.removeValue(forKey: id)
         case nil:
             // A descriptor created by an identity event is marked acknowledged

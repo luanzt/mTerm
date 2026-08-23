@@ -29,8 +29,8 @@ final class WorkspaceSnapshotStoreTests: XCTestCase {
             fileURL: fixture.fileURL,
             debounceInterval: 0.01)
 
-        store.schedule(snapshot(sequence: 1))
-        store.schedule(snapshot(sequence: 2))
+        store.schedule { self.snapshot(sequence: 1) }
+        store.schedule { self.snapshot(sequence: 2) }
         try await Task.sleep(nanoseconds: 50_000_000)
 
         let data = try Data(contentsOf: fixture.fileURL)
@@ -45,7 +45,7 @@ final class WorkspaceSnapshotStoreTests: XCTestCase {
             fileURL: fixture.fileURL,
             debounceInterval: 0.01)
 
-        store.schedule(snapshot(sequence: 1))
+        store.schedule { self.snapshot(sequence: 1) }
         store.flush(snapshot(sequence: 2))
         XCTAssertEqual(try loadSequence(from: fixture.fileURL), 2)
 
