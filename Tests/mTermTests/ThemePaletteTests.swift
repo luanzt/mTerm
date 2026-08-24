@@ -9,7 +9,7 @@ final class ThemePaletteTests: XCTestCase {
         XCTAssertEqual(p.terminalBackground, 0x0A0C0F)
         XCTAssertEqual(p.terminalForeground, 0xDCDCDC)
         XCTAssertEqual(p.terminalCaret, 0xFFFFFF)
-        XCTAssertEqual(p.terminalLinkForeground, 0xA7ABF2)
+        XCTAssertEqual(p.terminalLinkForeground, 0x61A3E8)
         XCTAssertEqual(p.terminalLinkHighlight, 0x328EEE)
         XCTAssertEqual(p.deck, Color(hex: 0x0A0C0F))
         XCTAssertEqual(p.sidebar, Color(hex: 0x0F1216))

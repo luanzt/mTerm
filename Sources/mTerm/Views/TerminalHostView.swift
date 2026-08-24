@@ -76,8 +76,8 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
         terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
         terminal.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
-        // Give OSC 8 labels the same lavender used by Claude's other links.
-        // Command-hover reveals the link with a stronger blue + underline.
+        // OSC 8 labels rest in a softer blue; command-hover brightens to the
+        // highlight blue + underline (and the pointing-hand cursor).
         terminal.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
         terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
         terminal.linkHighlightMode = .hoverWithModifier

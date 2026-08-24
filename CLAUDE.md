@@ -416,10 +416,11 @@ these mTerm-specific changes:
 - `LocalProcessTerminalView.defersProcessWindowSizeUpdates` (default `false`) holds
   back intermediate child-PTY winsizes and flushes the final one when cleared, so a
   drag does not storm the shell with SIGWINCH.
-- Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`, so
-  explicit OSC 8 links can match normal text at rest and change color only while
-  highlighted; macOS also uses a pointing-hand cursor only while the configured
-  link mode allows activation.
+- Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`.
+  mTerm rests explicit OSC 8 links in a softer blue (`terminalLinkForeground`,
+  `0x61A3E8`) and brightens them to the highlight blue (`terminalLinkHighlight`,
+  `0x328EEE`) with an underline on ⌘-hover. macOS uses the pointing-hand cursor
+  only while the configured link mode allows activation.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
 these changes on top of upstream. (`edev-no-reflow` is the working branch these

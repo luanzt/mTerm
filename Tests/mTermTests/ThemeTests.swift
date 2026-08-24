@@ -23,7 +23,7 @@ final class ThemeTests: XCTestCase {
     func testTerminalColorsMatchITermDarkDefaults() {
         XCTAssertEqual(MTermTheme.terminalForeground, 0xDCDCDC)
         XCTAssertEqual(MTermTheme.terminalCaret, 0xFFFFFF)
-        XCTAssertEqual(MTermTheme.terminalLinkForeground, 0xA7ABF2)
+        XCTAssertEqual(MTermTheme.terminalLinkForeground, 0x61A3E8)
         XCTAssertEqual(MTermTheme.terminalLinkHighlight, 0x328EEE)
         XCTAssertEqual(MTermTheme.ansiPalette, [
             0x14191E,

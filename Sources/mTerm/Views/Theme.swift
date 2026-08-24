@@ -36,7 +36,7 @@ struct ThemePalette: Equatable {
             glow: accent.opacity(0.14), headerActive: accent.opacity(0.10),
             rowHover: Color.white.opacity(0.05), rowSelected: accent.opacity(0.12),
             terminalForeground: 0xDCDCDC, terminalBackground: termHex,
-            terminalCaret: accentHex, terminalLinkForeground: pathHex,
+            terminalCaret: accentHex, terminalLinkForeground: 0x61A3E8,
             terminalLinkHighlight: 0x328EEE)
     }
 }
@@ -91,7 +91,7 @@ enum MTermThemeID: String, CaseIterable, Identifiable {
                 rowHover: Color.white.opacity(0.05),
                 rowSelected: Color(hex: 0x34D399).opacity(0.12),
                 terminalForeground: 0xDCDCDC, terminalBackground: 0x0A0C0F,
-                terminalCaret: 0xFFFFFF, terminalLinkForeground: 0xA7ABF2,
+                terminalCaret: 0xFFFFFF, terminalLinkForeground: 0x61A3E8,
                 terminalLinkHighlight: 0x328EEE)
         case .ocean:
             return .make(termHex: 0x070D17, textHex: 0xE6EDF7, accentHex: 0x38BDF8, borderHex: 0x17263F, headHex: 0x0B1524, dimHex: 0x7E8CA8, dim2Hex: 0x465067, pathHex: 0x7DD3FC, promptHex: 0x5EEAD4)
