@@ -273,21 +273,25 @@ output or an idle timer.
    activates mTerm and focuses/reopens the originating session.
 
 The plugin also listens to Claude Code's official `UserPromptSubmit`, `Stop`,
-and `StopFailure` lifecycle events and emits distinct private
+`StopFailure`, `PostCompact`, `SessionStart`, and `SessionEnd` lifecycle events
+and emits distinct private
 `OSC 777;state;mTerm Claude` `turn_started`/`turn_completed` payloads. Claude
 ignores hook output for `StopFailure`, so the executable shim captures the
 pane's controlling PTY before launching Claude and that handler writes the same
-non-notifying completion sequence to it directly. These payloads drive only the
-sidebar's working spinner around the main agent's turn; they are never forwarded
-as attention notifications and do not inspect prompt, transcript, or assistant-
+non-notifying completion sequence to it directly. A manual `PostCompact` clears
+the turn because Claude emits no `Stop` for `/compact`; automatic compaction does
+not clear it because the same turn continues. `SessionStart` clears stale work
+for startup/resume/`/clear`, and `SessionEnd` is the final lifecycle boundary.
+These payloads drive only the sidebar spinner; they are never forwarded as
+attention notifications and do not inspect prompt, transcript, or assistant
 message fields.
 
-The same generated plugin listens to official `SessionStart` events. It extracts
-only `session_id` from hook stdin and returns the private
-`OSC 777;session;mTerm Claude;<uuid>` terminal sequence. The Swift parser accepts
-that UUID only while shell integration says Claude owns the pane. Startup,
-resume, clear, compact, and fork therefore replace the pane's stable resume
-locator without reading a transcript or modifying user/project Claude settings.
+For `SessionStart`, the hook also extracts only `session_id` from stdin and
+returns the private `OSC 777;session;mTerm Claude;<uuid>` sequence before its
+completion sequence. The Swift parser accepts that UUID only while shell
+integration says Claude owns the pane. Startup, resume, clear, compact, and fork
+therefore replace the stable resume locator without reading a transcript or
+modifying user/project Claude settings.
 
 Authorization is requested in context the first time a supported agent starts,
 rather than at app launch. Do not replace the Claude `Notification` hook with
@@ -321,9 +325,9 @@ user's arguments and applies four invocation-only overrides:
 - `tui.notification_condition="always"` ensures mTerm receives events even
   without terminal focus reporting. `AgentNotificationCoordinator` still
   suppresses native notifications while `NSApp` is active.
-- `tui.terminal_title=["thread-title"]` makes Codex publish its manually assigned
-  thread name, or its thread UUID while unnamed, through standard OSC 0/2
-  terminal-title updates without the animated activity/project-name suffix.
+- `tui.terminal_title=["app-name","run-state","thread-title"]` gives mTerm a
+  scoped, non-animated lifecycle protocol (`Starting`, `Working`, `Thinking`,
+  `Waiting`, or `Ready`) followed by Codex's manual thread name or unnamed UUID.
 
 No `~/.codex/config.toml` setting is edited. A later user-supplied `-c` argument
 can override these defaults for an individual invocation. Because OSC 9 is a
@@ -339,29 +343,29 @@ Ordinary terminal sessions use a graphite app tile with a green `>` and white
 underscore instead of a status dot; exited sessions dim that prompt motif.
 
 The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
-a submitted response. Claude's official `UserPromptSubmit` event starts that
-state; `Stop` finishes successful turns and `StopFailure` finishes API errors,
-including rate limits. After a trusted Claude permission, elicitation, or
-agent-needs-input notification, Return may also resume its state without a new
-top-level prompt. Codex starts the state from a plain Return in the TUI and clears
-it through its built-in attention event. Slash commands and their follow-up
-menus (for example, choosing an entry after `/model`) remain local to the TUI
-and must not start the state; local-command suppression ends when Codex redraws
-its empty input prompt. Escape/Ctrl-C, returning to the shell, or closing the
-session also clears either agent's state. Modified Returns do not
-start the spinner; keyboard submission tracking requires the TUI's bracketed-
-paste input mode plus the existing foreground-transition grace period, so the
-shell Return that launches an agent is not treated as submitted work. Keep this
-indicator out of pane headers and terminal content.
+a response. Claude's official lifecycle hooks own its state. After a trusted
+Claude permission, elicitation, or agent-needs-input notification, Return may
+also resume work without a new top-level prompt. Codex activity must come only
+from the TUI-owned `run-state` title: `Starting`/`Working`/`Thinking`/`Waiting`
+set working and `Ready` clears it. Never infer Codex activity from Return; slash
+commands, menus, approvals, and short-lived local interactions make keyboard
+inference asymmetric and can strand a spinner when no matching OSC 9 attention
+event follows. OSC 9 remains the attention channel and an additional clear
+boundary. Escape/Ctrl-C, returning to the shell, or closing the session also
+clears either agent's state. Keep this indicator out of pane headers and terminal
+content.
 
 #### Agent conversation titles
 
 Claude Code publishes its current conversation title through standard OSC 0/2;
-the Codex invocation override above requests its thread-title signal.
-`TerminalHostView` receives those updates through SwiftTerm's process delegate
-and briefly debounces them to avoid rendering Claude's animated title states.
+the Codex invocation override above requests scoped run-state + thread-title
+segments.
+`TerminalHostView` receives those updates through SwiftTerm's process delegate.
+Claude titles are briefly debounced to avoid rendering animated decoration;
+scoped Codex run-state titles are delivered immediately to preserve event order.
 `WorkspaceStore` validates and accepts the result only while shell integration
-reports `claude` or `codex` as the pane's foreground command.
+reports `claude` or `codex` as the pane's foreground command. It strips Codex's
+`codex | <run-state> |` protocol prefix before title/locator handling.
 
 Codex's `thread-title` falls back to a UUID until the user runs `/rename` or
 starts with `--name`; never display that identifier. `CodexThreadTitleResolver`

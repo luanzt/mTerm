@@ -108,7 +108,11 @@ final class ClaudeIntegrationTests: XCTestCase {
         XCTAssertTrue(hooksText.contains("\"StopFailure\""))
         XCTAssertTrue(hooksText.contains("\"UserPromptSubmit\""))
         XCTAssertTrue(hooksText.contains("\"SessionStart\""))
+        XCTAssertTrue(hooksText.contains("\"SessionEnd\""))
+        XCTAssertTrue(hooksText.contains("\"PostCompact\""))
         XCTAssertTrue(hooksText.contains("\"session_started\""))
+        XCTAssertTrue(hooksText.contains("\"session_ended\""))
+        XCTAssertTrue(hooksText.contains("\"turn_compacted\""))
         XCTAssertTrue(hooksText.contains("\"turn_started\""))
         XCTAssertTrue(hooksText.contains("\"turn_completed\""))
         XCTAssertTrue(hooksText.contains("\"turn_failed\""))
@@ -264,26 +268,67 @@ final class ClaudeIntegrationTests: XCTestCase {
         let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         let data = try runHook(
             argument: "session_started",
-            input: "{\"session_id\":\"\(id)\"}")
+            input: "{\"session_id\":\"\(id)\",\"source\":\"startup\"}")
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: data) as? [String: String])
 
         XCTAssertEqual(
             object["terminalSequence"],
+            "\u{001B}]777;session;mTerm Claude;\(id)\u{0007}" +
+                "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}")
+    }
+
+    func testIdleSessionStartStillClearsForMissingOrMalformedSessionID() throws {
+        for input in [
+            "{\"source\":\"startup\"}",
+            "{\"source\":\"resume\",\"session_id\":\"not-a-uuid\"}",
+            "{\"source\":\"clear\",\"session_id\":\"zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz\"}",
+        ] {
+            let data = try runHook(
+                argument: "session_started",
+                input: input)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: String])
+            XCTAssertEqual(
+                object["terminalSequence"],
+                "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}")
+        }
+    }
+
+    func testCompactSessionStartUpdatesIdentityWithoutClearingActiveTurn() throws {
+        let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        let data = try runHook(
+            argument: "session_started",
+            input: "{\"session_id\":\"\(id)\",\"source\":\"compact\"}")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(
+            object["terminalSequence"],
             "\u{001B}]777;session;mTerm Claude;\(id)\u{0007}")
     }
 
-    func testSessionStartHookEmitsNothingForMissingOrMalformedSessionID() throws {
-        for input in [
-            "{}",
-            "{\"session_id\":\"not-a-uuid\"}",
-            "{\"session_id\":\"zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz\"}",
-            "not-json",
-        ] {
-            XCTAssertTrue(try runHook(
-                argument: "session_started",
-                input: input).isEmpty)
-        }
+    func testManualCompactClearsWorkingStateButAutomaticCompactDoesNot() throws {
+        let manual = try runHook(
+            argument: "turn_compacted",
+            input: "{\"trigger\":\"manual\"}")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: manual) as? [String: String])
+        XCTAssertEqual(
+            object["terminalSequence"],
+            "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}")
+
+        XCTAssertTrue(try runHook(
+            argument: "turn_compacted",
+            input: "{\"trigger\":\"auto\"}").isEmpty)
+    }
+
+    func testSessionEndClearsWorkingState() throws {
+        let data = try runHook(argument: "session_ended", input: "{}")
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: String])
+        XCTAssertEqual(
+            object["terminalSequence"],
+            "\u{001B}]777;state;mTerm Claude;turn_completed\u{0007}")
     }
 
     private func runHook(argument: String, input: String) throws -> Data {

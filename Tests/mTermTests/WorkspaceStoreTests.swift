@@ -713,10 +713,30 @@ final class WorkspaceStoreTests: XCTestCase {
 
         store.setForeground(session.id, command: "codex")
         store.reportAgentInputSubmitted(session.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+        store.setAgentTitle(session.id, title: "codex | Working | Fix auth")
         XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
 
         store.reportCodexAttention(session.id)
         XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+    }
+
+    func testCodexWorkingStateFollowsAuthoritativeTerminalRunState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "codex")
+        store.setAgentTitle(
+            session.id,
+            title: "codex | Thinking | Fix authentication flow")
+        XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), "Fix authentication flow")
+
+        store.setAgentTitle(
+            session.id,
+            title: "codex | Ready | Fix authentication flow")
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), "Fix authentication flow")
     }
 
     func testAgentWorkingStateClearsWhenAgentExitsOrSessionCloses() {

@@ -56,9 +56,9 @@ final class WorkspaceStore: ObservableObject {
     /// icon in the sidebar and pane header, requests notification permission in
     /// context, and clears on close.
     @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
-    /// Agent sessions currently processing a submitted response. Attention events
-    /// clear this state when Claude/Codex finishes or needs the user again. This
-    /// drives only the sidebar spinner; pane headers remain visually unchanged.
+    /// Agent sessions currently processing a submitted response. Claude lifecycle
+    /// hooks and Codex's TUI-owned `run-state` title drive this state; attention,
+    /// interruption, and foreground exit provide authoritative clear boundaries.
     @Published private(set) var agentWorkingSessionIDs: Set<SessionRecord.ID> = []
     /// Validated OSC 0/2 titles emitted by active Claude/Codex processes. Kept
     /// separately so each session's stable "Terminal N" title is restored when
@@ -443,10 +443,11 @@ final class WorkspaceStore: ObservableObject {
         updateAgentRestorationState(for: id, foregroundCommand: command)
     }
 
-    /// Starts (or resumes) an active agent's work. Claude reports this through
-    /// its `UserPromptSubmit` hook; Codex uses validated keyboard submission.
+    /// Starts (or resumes) Claude's work through its `UserPromptSubmit` hook.
+    /// Codex activity comes from its TUI-owned `run-state` title instead of key
+    /// inference, so local commands and approval interactions cannot stick it on.
     func reportAgentInputSubmitted(_ id: SessionRecord.ID) {
-        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) else { return }
+        guard claudeSessionIDs.contains(id) else { return }
         agentWorkingSessionIDs.insert(id)
     }
 
@@ -464,8 +465,20 @@ final class WorkspaceStore: ObservableObject {
         let isCodex = codexSessionIDs.contains(id)
         guard isClaude || isCodex else { return }
 
+        var scopedTitle = rawTitle
         if isCodex,
-           let threadID = CodexThreadTitleResolver.threadID(from: rawTitle) {
+           let update = CodexIntegration.parseTerminalTitle(rawTitle) {
+            if update.isWorking {
+                agentWorkingSessionIDs.insert(id)
+            } else {
+                agentWorkingSessionIDs.remove(id)
+            }
+            guard let conversationTitle = update.conversationTitle else { return }
+            scopedTitle = conversationTitle
+        }
+
+        if isCodex,
+           let threadID = CodexThreadTitleResolver.threadID(from: scopedTitle) {
             recordCodexLocator(for: id, locator: .threadID(threadID))
             cancelCodexLocatorResolution(for: id)
             if !manuallyRenamedSessionIDs.contains(id) {
@@ -475,7 +488,7 @@ final class WorkspaceStore: ObservableObject {
         }
 
         guard let title = AgentSessionTitle.normalize(
-            rawTitle,
+            scopedTitle,
             strippingLeadingDecoration: isClaude) else {
             return
         }
@@ -483,7 +496,7 @@ final class WorkspaceStore: ObservableObject {
             // Display normalization may collapse whitespace or truncate a long
             // title. Resume identity must instead preserve the exact validated
             // Codex name emitted by the TUI.
-            resolveCodexLocator(for: id, exactName: rawTitle)
+            resolveCodexLocator(for: id, exactName: scopedTitle)
             // A real OSC title is a manual `/rename`/`--name` value and wins
             // over any in-flight automatic-title metadata lookup.
             cancelCodexTitleResolution(for: id)

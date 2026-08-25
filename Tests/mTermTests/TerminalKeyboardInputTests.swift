@@ -56,47 +56,15 @@ final class TerminalKeyboardInputTests: XCTestCase {
         )
     }
 
-    func testPlainReturnSubmitsActiveAgentInput() {
-        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
-            keyCode: 36,
-            modifierFlags: [],
-            foregroundCommand: "codex"))
-        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
-            keyCode: 76,
-            modifierFlags: .numericPad,
-            foregroundCommand: "codex"))
-    }
-
-    func testCodexSlashCommandDoesNotSubmitAgentInput() {
-        for inputLine in ["› /clear", "│ › /clear", "  /rename New title"] {
-            XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
-                keyCode: 36,
-                modifierFlags: [],
-                foregroundCommand: "codex",
-                codexInputLine: inputLine))
-        }
-
-        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
-            keyCode: 36,
-            modifierFlags: [],
-            foregroundCommand: "codex",
-            codexInputLine: "› please inspect /clear behavior"))
-    }
-
-    func testCodexLocalCommandMenuSelectionDoesNotSubmitAgentInput() {
+    func testCodexReturnDoesNotInferAgentActivity() {
         XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: [],
-            foregroundCommand: "codex",
-            codexInputLine: "  › 1. gpt-5.6-sol",
-            isCodexLocalInteraction: true))
-    }
-
-    func testCodexIdlePromptEndsLocalCommandInteraction() {
-        XCTAssertTrue(TerminalKeyboardInput.isCodexIdlePrompt("│ ›   "))
-        XCTAssertTrue(TerminalKeyboardInput.isCodexIdlePrompt("  ›"))
-        XCTAssertFalse(TerminalKeyboardInput.isCodexIdlePrompt("› next prompt"))
-        XCTAssertFalse(TerminalKeyboardInput.isCodexIdlePrompt("› 1. gpt-5.6-sol"))
+            foregroundCommand: "codex"))
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
+            keyCode: 76,
+            modifierFlags: .numericPad,
+            foregroundCommand: "codex"))
     }
 
     func testReturnDoesNotSubmitOutsideAgentOrWithEditingModifiers() {
@@ -138,7 +106,7 @@ final class TerminalKeyboardInputTests: XCTestCase {
             agentActivationUptime: 100,
             eventUptime: 100.1))
 
-        XCTAssertTrue(TerminalKeyboardInput.isAgentSubmission(
+        XCTAssertFalse(TerminalKeyboardInput.isAgentSubmission(
             keyCode: 36,
             modifierFlags: [],
             foregroundCommand: "codex",

@@ -211,6 +211,30 @@ enum ClaudeIntegration {
                 ]
               }
             ],
+            "SessionEnd": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh",
+                    "args": ["session_ended"],
+                    "timeout": 5
+                  }
+                ]
+              }
+            ],
+            "PostCompact": [
+              {
+                "hooks": [
+                  {
+                    "type": "command",
+                    "command": "${CLAUDE_PLUGIN_ROOT}/scripts/notify.sh",
+                    "args": ["turn_compacted"],
+                    "timeout": 5
+                  }
+                ]
+              }
+            ],
             "UserPromptSubmit": [
               {
                 "hooks": [
@@ -261,16 +285,36 @@ enum ClaudeIntegration {
     case "$1" in
       session_started)
         session_id="$(printf '%s' "$input" | /usr/bin/plutil -extract session_id raw -o - - 2>/dev/null || true)"
+        session_source="$(printf '%s' "$input" | /usr/bin/plutil -extract source raw -o - - 2>/dev/null || true)"
+        session_sequence=''
+        completion_sequence=''
         case "$session_id" in
           ????????-????-????-????-????????????)
             case "$session_id" in
               *[!0123456789abcdefABCDEF-]*) ;;
               *)
-                printf '{"terminalSequence":"\\\\u001b]777;session;mTerm Claude;%s\\\\u0007"}\\n' "$session_id"
+                session_sequence="\\\\u001b]777;session;mTerm Claude;${session_id}\\\\u0007"
                 ;;
             esac
             ;;
         esac
+        case "$session_source" in
+          startup|resume|clear)
+            completion_sequence="\\\\u001b]777;state;mTerm Claude;turn_completed\\\\u0007"
+            ;;
+        esac
+        if [ -n "$session_sequence$completion_sequence" ]; then
+          printf '{"terminalSequence":"%s%s"}\\n' "$session_sequence" "$completion_sequence"
+        fi
+        ;;
+      session_ended)
+        printf '{"terminalSequence":"\\\\u001b]777;state;mTerm Claude;turn_completed\\\\u0007"}\\n'
+        ;;
+      turn_compacted)
+        trigger="$(printf '%s' "$input" | /usr/bin/plutil -extract trigger raw -o - - 2>/dev/null || true)"
+        if [ "$trigger" = "manual" ]; then
+          printf '{"terminalSequence":"\\\\u001b]777;state;mTerm Claude;turn_completed\\\\u0007"}\\n'
+        fi
         ;;
       permission_prompt|idle_prompt|elicitation_dialog|agent_needs_input|agent_completed)
         printf '{"terminalSequence":"\\\\u001b]777;notify;mTerm Claude;%s\\\\u0007"}\\n' "$1"

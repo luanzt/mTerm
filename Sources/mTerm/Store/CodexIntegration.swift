@@ -7,6 +7,49 @@ import Foundation
 enum CodexIntegration {
     static let oscCode = 9
 
+    struct TerminalTitleUpdate: Equatable {
+        let isWorking: Bool
+        let conversationTitle: String?
+    }
+
+    /// Codex's `run-state` title item comes from the TUI's internal task state,
+    /// making it more reliable than inferring work from Return key presses. The
+    /// `app-name` prefix scopes this protocol to mTerm's per-invocation title.
+    static func parseTerminalTitle(_ rawTitle: String) -> TerminalTitleUpdate? {
+        guard !rawTitle.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+        }) else { return nil }
+
+        let prefix = "codex | "
+        guard rawTitle.hasPrefix(prefix) else { return nil }
+        let remainder = rawTitle.dropFirst(prefix.count)
+        let separator = " | "
+        let state: Substring
+        let conversationTitle: String?
+        if let separatorRange = remainder.range(of: separator) {
+            state = remainder[..<separatorRange.lowerBound]
+            let title = remainder[separatorRange.upperBound...]
+                .trimmingCharacters(in: .whitespaces)
+            conversationTitle = title.isEmpty ? nil : title
+        } else {
+            state = remainder
+            conversationTitle = nil
+        }
+
+        let isWorking: Bool
+        switch state {
+        case "Starting", "Working", "Thinking", "Waiting":
+            isWorking = true
+        case "Ready":
+            isWorking = false
+        default:
+            return nil
+        }
+        return TerminalTitleUpdate(
+            isWorking: isWorking,
+            conversationTitle: conversationTitle)
+    }
+
     /// Codex's OSC 9 payload is its human-readable notification message. mTerm
     /// intentionally does not copy that text into Notification Center because it
     /// can contain assistant output, commands, or paths. Requiring the foreground
@@ -51,11 +94,9 @@ enum CodexIntegration {
     }
 
     /// `notification_condition=always` makes delivery deterministic even when a
-    /// terminal doesn't implement focus-reporting escape sequences. Restricting
-    /// `terminal_title` to `thread-title` lets mTerm receive a manual thread name
-    /// or the UUID needed to resolve Codex's automatic title metadata, without
-    /// Codex's default animated activity + project title. mTerm owns the actual
-    /// foreground/background policy and suppresses alerts while active.
+    /// terminal doesn't implement focus-reporting escape sequences. The stable
+    /// `run-state` item reports Codex's internal lifecycle without an animated
+    /// title; `app-name` scopes parsing and `thread-title` preserves identity.
     private static let codexShim = """
     #!/bin/zsh
     shim_dir="${0:A:h}"
@@ -69,7 +110,7 @@ enum CodexIntegration {
       -c 'tui.notifications=true' \\
       -c 'tui.notification_method="osc9"' \\
       -c 'tui.notification_condition="always"' \\
-      -c 'tui.terminal_title=["thread-title"]' \\
+      -c 'tui.terminal_title=["app-name","run-state","thread-title"]' \\
       "$@"
     """ + "\n"
 }

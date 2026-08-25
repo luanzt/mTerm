@@ -33,8 +33,8 @@ struct TerminalHostView: NSViewRepresentable {
     /// Reports Codex's built-in OSC 9 notification only while Codex is the
     /// foreground process in this pane.
     var onCodexAttention: () -> Void = {}
-    /// Reports a submitted response while Claude/Codex owns the terminal. This
-    /// is used only for the sidebar's transient working indicator.
+    /// Reports a submitted Claude response. Codex activity is reported by its
+    /// TUI-owned terminal-title run state instead of inferred keyboard input.
     var onAgentInputSubmitted: () -> Void = {}
     /// Clears the transient working indicator when the user interrupts a turn.
     var onAgentWorkInterrupted: () -> Void = {}
@@ -116,28 +116,11 @@ struct TerminalHostView: NSViewRepresentable {
                 return event
             }
             let foregroundCommand = context.coordinator.foregroundCommand
-            let codexInputLine = TerminalKeyboardInput.currentInputLine(
-                in: terminal.getTerminal())
-            if context.coordinator.isCodexLocalInteraction,
-               TerminalKeyboardInput.isCodexIdlePrompt(codexInputLine) {
-                context.coordinator.isCodexLocalInteraction = false
-            }
-            if TerminalKeyboardInput.isCodexLocalCommand(codexInputLine),
-               TerminalKeyboardInput.isPlainReturn(
-                keyCode: event.keyCode,
-                modifierFlags: event.modifierFlags) {
-                context.coordinator.isCodexLocalInteraction = true
-            }
-            if context.coordinator.isCodexLocalInteraction {
-                context.coordinator.scheduleCodexLocalInteractionCheck(in: terminal)
-            }
             if TerminalKeyboardInput.isAgentSubmission(
                 keyCode: event.keyCode,
                 modifierFlags: event.modifierFlags,
                 foregroundCommand: foregroundCommand,
                 isAgentInputMode: terminal.getTerminal().bracketedPasteMode,
-                codexInputLine: codexInputLine,
-                isCodexLocalInteraction: context.coordinator.isCodexLocalInteraction,
                 isClaudeResponseExpected: context.coordinator.isClaudeResponseExpected,
                 agentActivationUptime: context.coordinator.agentActivationUptime,
                 eventUptime: event.timestamp
@@ -150,7 +133,6 @@ struct TerminalHostView: NSViewRepresentable {
                 foregroundCommand: context.coordinator.foregroundCommand
             ) {
                 context.coordinator.isClaudeResponseExpected = false
-                context.coordinator.isCodexLocalInteraction = false
                 context.coordinator.onAgentWorkInterrupted()
             }
             guard let input = TerminalKeyboardInput.shiftEnter(
@@ -169,7 +151,6 @@ struct TerminalHostView: NSViewRepresentable {
             switch ShellIntegration.parse(payload) {
             case .run(let command):
                 context.coordinator.isClaudeResponseExpected = false
-                context.coordinator.isCodexLocalInteraction = false
                 if command == "claude" || command == "codex" {
                     context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
                 } else {
@@ -190,7 +171,6 @@ struct TerminalHostView: NSViewRepresentable {
                 context.coordinator.foregroundCommand = nil
                 context.coordinator.agentActivationUptime = nil
                 context.coordinator.isClaudeResponseExpected = false
-                context.coordinator.isCodexLocalInteraction = false
                 DispatchQueue.main.async {
                     context.coordinator.terminal?.getTerminal().reflowOnResize = false
                     report(nil)
@@ -379,7 +359,6 @@ struct TerminalHostView: NSViewRepresentable {
         var foregroundCommand: String?
         var agentActivationUptime: TimeInterval?
         var isClaudeResponseExpected = false
-        var isCodexLocalInteraction = false
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
@@ -394,7 +373,6 @@ struct TerminalHostView: NSViewRepresentable {
         var onFileDrop: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
-        private var pendingCodexLocalInteractionCheck: DispatchWorkItem?
 
         init(restorationIntent: AgentResumeDescriptor?) {
             restoreCommandCoordinator = TerminalRestoreCommandCoordinator(
@@ -455,6 +433,19 @@ struct TerminalHostView: NSViewRepresentable {
             source: LocalProcessTerminalView,
             title: String
         ) {
+            // Codex's mTerm-scoped title contains a stable TUI-owned run state.
+            // Deliver it in feed order so an already-queued `Working` update
+            // cannot land after OSC 9 clears the turn. Claude still needs the
+            // debounce below because it animates decoration in its title.
+            if foregroundCommand == "codex" {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    pendingTitleUpdate?.cancel()
+                    pendingTitleUpdate = nil
+                    onTerminalTitle(title)
+                }
+                return
+            }
             // Claude may animate a spinner in the terminal title while a turn is
             // active. Debounce on the main queue so only a stable conversation
             // title reaches SwiftUI.
@@ -494,21 +485,6 @@ struct TerminalHostView: NSViewRepresentable {
             pendingTitleUpdate = nil
         }
 
-        func scheduleCodexLocalInteractionCheck(in terminal: LocalProcessTerminalView) {
-            guard isCodexLocalInteraction else { return }
-            pendingCodexLocalInteractionCheck?.cancel()
-            let check = DispatchWorkItem { [weak self, weak terminal] in
-                guard let self, let terminal, isCodexLocalInteraction else { return }
-                let inputLine = TerminalKeyboardInput.currentInputLine(
-                    in: terminal.getTerminal())
-                if TerminalKeyboardInput.isCodexIdlePrompt(inputLine) {
-                    isCodexLocalInteraction = false
-                }
-                pendingCodexLocalInteractionCheck = nil
-            }
-            pendingCodexLocalInteractionCheck = check
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: check)
-        }
     }
 }
 
@@ -529,32 +505,21 @@ enum TerminalKeyboardInput {
         return [0x0A]
     }
 
-    /// A plain Return submits the current prompt/approval in Codex. Claude uses
-    /// its official `UserPromptSubmit` hook for top-level prompts, but a Return
-    /// also resumes work after a trusted permission/input attention event.
+    /// Claude uses its official `UserPromptSubmit` hook for top-level prompts,
+    /// but Return also resumes work after a trusted permission/input event.
     static func isAgentSubmission(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
         foregroundCommand: String?,
         isAgentInputMode: Bool = true,
-        codexInputLine: String? = nil,
-        isCodexLocalInteraction: Bool = false,
         isClaudeResponseExpected: Bool = false,
         agentActivationUptime: TimeInterval? = nil,
         eventUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> Bool {
-        let isSubmissionOwner = foregroundCommand == "codex"
-            || (foregroundCommand == "claude" && isClaudeResponseExpected)
+        let isSubmissionOwner = foregroundCommand == "claude" && isClaudeResponseExpected
         guard isSubmissionOwner,
               isAgentInputMode,
               returnKeyCodes.contains(keyCode) else { return false }
-        // Codex handles slash commands locally. They do not start an agent turn
-        // and therefore do not emit the completion notification that normally
-        // clears the sidebar spinner.
-        if foregroundCommand == "codex",
-           (isCodexLocalInteraction || isCodexLocalCommand(codexInputLine)) {
-            return false
-        }
         // Require the input mode enabled by the TUI so the shell Return that
         // launches it cannot be reinterpreted as a submitted prompt.
         // Keep a short transition guard as well because local event monitors and
@@ -566,65 +531,6 @@ enum TerminalKeyboardInput {
         return modifierFlags
             .intersection([.shift, .command, .control, .option])
             .isEmpty
-    }
-
-    /// Reads the visible logical line up to the cursor. Codex redraws its input
-    /// box into the terminal buffer, so this also covers text inserted by paste,
-    /// completion, or input methods instead of trying to mirror key presses.
-    static func currentInputLine(in terminal: Terminal) -> String? {
-        let cursor = terminal.getCursorLocation()
-        guard cursor.y >= 0,
-              cursor.x >= 0,
-              let currentLine = terminal.getLine(row: cursor.y) else {
-            return nil
-        }
-
-        var text = currentLine.translateToString(
-            startCol: 0,
-            endCol: min(cursor.x, currentLine.count),
-            skipNullCellsFollowingWide: true)
-        var row = cursor.y
-        var line = currentLine
-        while line.isWrapped, row > 0 {
-            row -= 1
-            guard let previousLine = terminal.getLine(row: row) else { break }
-            text = previousLine.translateToString(
-                trimRight: true,
-                skipNullCellsFollowingWide: true) + text
-            line = previousLine
-        }
-        return text
-    }
-
-    static func isPlainReturn(
-        keyCode: UInt16,
-        modifierFlags: NSEvent.ModifierFlags
-    ) -> Bool {
-        returnKeyCodes.contains(keyCode)
-            && modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty
-    }
-
-    static func isCodexLocalCommand(_ inputLine: String?) -> Bool {
-        guard let inputLine else { return false }
-        guard let slash = inputLine.firstIndex(of: "/") else { return false }
-        let prefix = inputLine[..<slash]
-        guard !prefix.contains(where: { $0.isLetter || $0.isNumber }) else {
-            return false
-        }
-        let commandStart = inputLine.index(after: slash)
-        guard commandStart < inputLine.endIndex else { return false }
-        return inputLine[commandStart].isLetter
-    }
-
-    static func isCodexIdlePrompt(_ inputLine: String?) -> Bool {
-        guard let inputLine,
-              let prompt = inputLine.firstIndex(of: "›") else { return false }
-        let prefix = inputLine[..<prompt]
-        guard prefix.allSatisfy({ $0.isWhitespace || $0 == "│" }) else {
-            return false
-        }
-        return inputLine[inputLine.index(after: prompt)...]
-            .allSatisfy(\.isWhitespace)
     }
 
     /// Claude and Codex both use Escape or Ctrl-C to interrupt an active turn.

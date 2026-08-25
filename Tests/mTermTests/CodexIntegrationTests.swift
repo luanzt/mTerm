@@ -37,6 +37,38 @@ final class CodexIntegrationTests: XCTestCase {
         }
     }
 
+    func testParsesCodexRunStateTitleAsAuthoritativeActivity() {
+        let workingStates = ["Starting", "Working", "Thinking", "Waiting"]
+        for state in workingStates {
+            XCTAssertEqual(
+                CodexIntegration.parseTerminalTitle(
+                    "codex | \(state) | Fix authentication flow"),
+                .init(isWorking: true, conversationTitle: "Fix authentication flow"))
+        }
+
+        XCTAssertEqual(
+            CodexIntegration.parseTerminalTitle(
+                "codex | Ready | Fix authentication flow"),
+            .init(isWorking: false, conversationTitle: "Fix authentication flow"))
+    }
+
+    func testCodexRunStateTitleAllowsMissingConversationTitle() {
+        XCTAssertEqual(
+            CodexIntegration.parseTerminalTitle("codex | Ready"),
+            .init(isWorking: false, conversationTitle: nil))
+    }
+
+    func testIgnoresTitlesWithoutMTermCodexRunStateShape() {
+        for title in [
+            "Fix authentication flow",
+            "Ready | Fix authentication flow",
+            "codex | Unknown | Fix authentication flow",
+            "claude | Working | Fix authentication flow",
+        ] {
+            XCTAssertNil(CodexIntegration.parseTerminalTitle(title))
+        }
+    }
+
     func testWritesExecutableShimWithPerInvocationOverrides() throws {
         XCTAssertTrue(CodexIntegration.writeFiles())
         let shim = CodexIntegration.shimDirectory.appendingPathComponent("codex")
@@ -46,7 +78,8 @@ final class CodexIntegrationTests: XCTestCase {
         XCTAssertTrue(contents.contains("tui.notifications=true"))
         XCTAssertTrue(contents.contains("tui.notification_method=\"osc9\""))
         XCTAssertTrue(contents.contains("tui.notification_condition=\"always\""))
-        XCTAssertTrue(contents.contains("tui.terminal_title=[\"thread-title\"]"))
+        XCTAssertTrue(contents.contains(
+            "tui.terminal_title=[\"app-name\",\"run-state\",\"thread-title\"]"))
         XCTAssertTrue(contents.contains("\"$@\""))
     }
 
@@ -86,7 +119,7 @@ final class CodexIntegrationTests: XCTestCase {
             "-c", "tui.notifications=true",
             "-c", "tui.notification_method=\"osc9\"",
             "-c", "tui.notification_condition=\"always\"",
-            "-c", "tui.terminal_title=[\"thread-title\"]",
+            "-c", "tui.terminal_title=[\"app-name\",\"run-state\",\"thread-title\"]",
             "resume", "--last",
             "-c", "tui.notifications=false",
         ])
