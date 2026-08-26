@@ -88,6 +88,7 @@ final class WorkspaceStore: ObservableObject {
     private let codexThreadIDLookup: CodexThreadIDLookup
     private var allowsSnapshotWrites: Bool
     private var isHydratingSnapshot = true
+    private var isPreparingForTermination = false
     private var agentResumeDescriptors: [SessionRecord.ID: AgentResumeDescriptor] = [:] {
         didSet { durableStateDidChange() }
     }
@@ -921,13 +922,26 @@ final class WorkspaceStore: ObservableObject {
         agentResumeDescriptors[id] = .claude(sessionID: sessionID)
     }
 
+    func prepareForTermination(_ behavior: QuitBehavior) {
+        isPreparingForTermination = true
+        switch behavior {
+        case .restorePanes:
+            flushSnapshot()
+        case .startClean:
+            allowsSnapshotWrites = false
+            snapshotStore?.discard()
+        }
+    }
+
     func flushSnapshot() {
         guard allowsSnapshotWrites else { return }
         snapshotStore?.flush(makeSnapshot())
     }
 
     private func durableStateDidChange() {
-        guard !isHydratingSnapshot, let snapshotStore else { return }
+        guard !isHydratingSnapshot,
+              !isPreparingForTermination,
+              let snapshotStore else { return }
         allowsSnapshotWrites = true
         snapshotStore.schedule { [weak self] in self?.makeSnapshot() }
     }

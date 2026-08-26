@@ -35,6 +35,44 @@ final class TerminalProcessRegistryTests: XCTestCase {
         XCTAssertTrue(waitUntilProcessExits(childPID, timeout: 2))
     }
 
+    func testTerminateAllForceKillsEveryRegisteredTerminalProcessTree() throws {
+        let first = try launchTerminalProcessTree()
+        let second = try launchTerminalProcessTree()
+        defer {
+            for terminal in [first.process, second.process] where terminal.isRunning {
+                terminal.terminate()
+            }
+        }
+        let registry = TerminalProcessRegistry()
+        registry.register(UUID(), shellPID: first.shellPID)
+        registry.register(UUID(), shellPID: second.shellPID)
+
+        registry.terminateAll(force: true)
+
+        for pid in [first.shellPID, first.childPID, second.shellPID, second.childPID] {
+            XCTAssertTrue(waitUntilProcessExits(pid, timeout: 2), "PID \(pid) survived quit cleanup")
+        }
+    }
+
+    private func launchTerminalProcessTree() throws -> (
+        process: Process,
+        shellPID: pid_t,
+        childPID: pid_t
+    ) {
+        let terminal = Process()
+        terminal.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        terminal.arguments = [
+            "-q", "/dev/null", "/bin/sh", "-c",
+            "trap '' TERM; while :; do sleep 1; done",
+        ]
+        terminal.standardOutput = FileHandle.nullDevice
+        terminal.standardError = FileHandle.nullDevice
+        try terminal.run()
+        let shellPID = try waitForChild(of: terminal.processIdentifier)
+        let childPID = try waitForChild(of: shellPID)
+        return (terminal, shellPID, childPID)
+    }
+
     private func waitForChild(of parentPID: pid_t,
                               timeout: TimeInterval = 2) throws -> pid_t {
         let deadline = Date().addingTimeInterval(timeout)

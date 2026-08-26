@@ -58,6 +58,12 @@ final class WorkspaceSnapshotStore {
         write(snapshot)
     }
 
+    func discard() {
+        pendingWrite?.cancel()
+        pendingWrite = nil
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     private func write(_ snapshot: WorkspaceSnapshot) {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         do {

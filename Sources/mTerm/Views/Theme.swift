@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// A full color palette for the app chrome plus the terminal's foreground /
-/// background / cursor / link colors. Every theme-dependent color lives here so
+/// background / cursor colors. Every theme-dependent color lives here so
 /// switching themes is a single assignment to `MTermTheme.current`.
 struct ThemePalette: Equatable {
     let deck, terminal, sidebar, header, control: Color
@@ -10,7 +10,6 @@ struct ThemePalette: Equatable {
     let accent, path, prompt, danger: Color
     let glow, headerActive, rowHover, rowSelected: Color
     let terminalForeground, terminalBackground, terminalCaret: UInt32
-    let terminalLinkForeground, terminalLinkHighlight: UInt32
 
     /// Build a palette from the nine base colors a theme defines (the mockup
     /// `EDev.dc.html` specifies only these). Secondary surfaces collapse onto
@@ -36,8 +35,7 @@ struct ThemePalette: Equatable {
             glow: accent.opacity(0.14), headerActive: accent.opacity(0.10),
             rowHover: Color.white.opacity(0.05), rowSelected: accent.opacity(0.12),
             terminalForeground: 0xDCDCDC, terminalBackground: termHex,
-            terminalCaret: accentHex, terminalLinkForeground: 0x61A3E8,
-            terminalLinkHighlight: 0x328EEE)
+            terminalCaret: accentHex)
     }
 }
 
@@ -91,8 +89,7 @@ enum MTermThemeID: String, CaseIterable, Identifiable {
                 rowHover: Color.white.opacity(0.05),
                 rowSelected: Color(hex: 0x34D399).opacity(0.12),
                 terminalForeground: 0xDCDCDC, terminalBackground: 0x0A0C0F,
-                terminalCaret: 0xFFFFFF, terminalLinkForeground: 0x61A3E8,
-                terminalLinkHighlight: 0x328EEE)
+                terminalCaret: 0xFFFFFF)
         case .ocean:
             return .make(termHex: 0x070D17, textHex: 0xE6EDF7, accentHex: 0x38BDF8, borderHex: 0x17263F, headHex: 0x0B1524, dimHex: 0x7E8CA8, dim2Hex: 0x465067, pathHex: 0x7DD3FC, promptHex: 0x5EEAD4)
         case .dracula:
@@ -169,8 +166,6 @@ enum MTermTheme {
     static var terminalForeground: UInt32 { current.terminalForeground }
     static var terminalBackground: UInt32 { current.terminalBackground }
     static var terminalCaret: UInt32 { current.terminalCaret }
-    static var terminalLinkForeground: UInt32 { current.terminalLinkForeground }
-    static var terminalLinkHighlight: UInt32 { current.terminalLinkHighlight }
 
     // MARK: - Theme-independent colors
 

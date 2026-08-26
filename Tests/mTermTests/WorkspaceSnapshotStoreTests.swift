@@ -53,6 +53,22 @@ final class WorkspaceSnapshotStoreTests: XCTestCase {
         XCTAssertEqual(try loadSequence(from: fixture.fileURL), 2)
     }
 
+    func testDiscardCancelsPendingWriteAndRemovesStoredSnapshot() async throws {
+        let fixture = try makeFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceSnapshotStore(
+            fileURL: fixture.fileURL,
+            debounceInterval: 0.01)
+        store.flush(snapshot(sequence: 1))
+        store.schedule { self.snapshot(sequence: 2) }
+
+        store.discard()
+
+        XCTAssertFalse(store.containsStoredSnapshot)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertFalse(store.containsStoredSnapshot)
+    }
+
     func testLoadReturnsSnapshotWrittenByAnotherStore() throws {
         let fixture = try makeFixture()
         defer { fixture.remove() }

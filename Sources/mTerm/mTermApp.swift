@@ -131,7 +131,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        workspace.flushSnapshot()
+        workspace.prepareForTermination(settings.quitBehavior)
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
             self.keyDownMonitor = nil

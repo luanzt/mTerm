@@ -64,15 +64,18 @@ window uses the stable `mTerm.mainWindow` frame autosave name.
 Notification click-through must unhide the application before fronting the main
 window and selecting the originating session.
 
-`⌘Q` has deliberately different semantics. `applicationShouldTerminate` first
-flushes the durable workspace snapshot, then removes event monitors, calls
-`TerminalProcessRegistry.terminateAll(force: true)`, and dismantles both hosting
+`⌘Q` has deliberately different semantics. `applicationShouldTerminate` applies
+the persisted `QuitBehavior`: `.restorePanes` synchronously flushes the durable
+workspace snapshot, while `.startClean` cancels pending writes and removes that
+snapshot so the next launch starts with one ungrouped shell. Clean quit preserves
+workspace folders and app settings. Both modes then remove event monitors, call
+`TerminalProcessRegistry.terminateAll(force: true)`, and dismantle both hosting
 views before returning `.terminateNow`. Do not route quit through session-close
-mutations or remove that forced cleanup: quitting must release shells, Node,
-Claude, Codex, and other processes still owned by mTerm's terminal Unix sessions.
-There is no detached PTY/tmux/helper daemon, so SSH, arbitrary running commands,
-editor state, terminal scrollback, and an exact in-flight response byte position
-do not survive `⌘Q`.
+mutations or make process cleanup conditional: quitting must release shells,
+Node, Claude, Codex, and other processes still owned by mTerm's terminal Unix
+sessions. There is no detached PTY/tmux/helper daemon, so SSH, arbitrary running
+commands, editor state, terminal scrollback, and an exact in-flight response byte
+position do not survive `⌘Q`.
 
 ### State: `WorkspaceStore` (Store/WorkspaceStore.swift)
 
@@ -400,7 +403,7 @@ not return to the shell and therefore must not restore `Terminal N`.
 `Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a
 `Color(hex:)` helper. All views read colors from here; don't reintroduce
 `Color(nsColor: .windowBackgroundColor)`-style system colors. Terminal
-foreground/cursor/link and ANSI 0–15 intentionally mirror the dark variants in
+foreground/cursor and ANSI 0–15 intentionally mirror the dark variants in
 iTerm2's `plists/DefaultBookmark.plist`; the terminal background remains mTerm's
 deck color so the embedded view blends into the pane. Those ANSI values are the
 reset defaults; `AppSettings.ansiColors` is the live user-selected palette.
@@ -420,11 +423,11 @@ these mTerm-specific changes:
 - `LocalProcessTerminalView.defersProcessWindowSizeUpdates` (default `false`) holds
   back intermediate child-PTY winsizes and flushes the final one when cleared, so a
   drag does not storm the shell with SIGWINCH.
-- Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`.
-  mTerm rests explicit OSC 8 links in a softer blue (`terminalLinkForeground`,
-  `0x61A3E8`) and brightens them to the highlight blue (`terminalLinkHighlight`,
-  `0x328EEE`) with an underline on ⌘-hover. macOS uses the pointing-hand cursor
-  only while the configured link mode allows activation.
+- Apple terminal views expose `linkForegroundColor` and `linkHighlightColor`,
+  but mTerm leaves both unset so explicit OSC 8 links retain the foreground
+  emitted by the terminal application. On ⌘-hover, SwiftTerm keeps that color
+  while adding an underline. macOS uses the pointing-hand cursor only while the
+  configured link mode allows activation.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
 these changes on top of upstream. (`edev-no-reflow` is the working branch these

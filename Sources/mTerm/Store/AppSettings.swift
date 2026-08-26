@@ -16,6 +16,20 @@ enum NewTerminalPlacement: String, CaseIterable, Identifiable {
     }
 }
 
+enum QuitBehavior: String, CaseIterable, Identifiable {
+    case restorePanes
+    case startClean
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .restorePanes: "Restore Panes on Next Launch"
+        case .startClean: "Start with a Clean Terminal"
+        }
+    }
+}
+
 @MainActor
 final class AppSettings: ObservableObject {
     static let defaultTerminalFontSize = 14.0
@@ -32,6 +46,7 @@ final class AppSettings: ObservableObject {
         static let sidebarWidth = "mterm.settings.sidebarWidth"
         static let ansiColors = "mterm.settings.ansiColors"
         static let newTerminalPlacement = "mterm.settings.newTerminalPlacement"
+        static let quitBehavior = "mterm.settings.quitBehavior"
         static let themeID = "mterm.settings.themeID"
     }
 
@@ -85,6 +100,12 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var quitBehavior: QuitBehavior {
+        didSet {
+            defaults.set(quitBehavior.rawValue, forKey: Key.quitBehavior)
+        }
+    }
+
     @Published var themeID: MTermThemeID {
         didSet {
             defaults.set(themeID.rawValue, forKey: Key.themeID)
@@ -125,6 +146,10 @@ final class AppSettings: ObservableObject {
         newTerminalPlacement = defaults.string(forKey: Key.newTerminalPlacement)
             .flatMap(NewTerminalPlacement.init(rawValue:))
             ?? .currentPane
+
+        quitBehavior = defaults.string(forKey: Key.quitBehavior)
+            .flatMap(QuitBehavior.init(rawValue:))
+            ?? .restorePanes
 
         let storedTheme = defaults.string(forKey: Key.themeID)
             .flatMap(MTermThemeID.init(rawValue:)) ?? .emerald

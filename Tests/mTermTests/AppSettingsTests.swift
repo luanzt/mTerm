@@ -12,6 +12,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.sidebarFontSize, 13)
         XCTAssertEqual(settings.sidebarWidth, 250)
         XCTAssertEqual(settings.newTerminalPlacement, .currentPane)
+        XCTAssertEqual(settings.quitBehavior, .restorePanes)
         XCTAssertFalse(settings.opensNewTerminalsInSplit)
         XCTAssertEqual(settings.ansiColors, MTermTheme.ansiPalette)
         XCTAssertNotNil(NSFont(name: settings.terminalFontName, size: 14))
@@ -27,6 +28,7 @@ final class AppSettingsTests: XCTestCase {
         settings.sidebarFontSize = 15
         settings.sidebarWidth = 330
         settings.newTerminalPlacement = .newSplit
+        settings.quitBehavior = .startClean
         settings.setANSIColor(0x123456, at: 4)
 
         let reloaded = AppSettings(defaults: defaults)
@@ -35,6 +37,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.sidebarFontSize, 15)
         XCTAssertEqual(reloaded.sidebarWidth, 330)
         XCTAssertEqual(reloaded.newTerminalPlacement, .newSplit)
+        XCTAssertEqual(reloaded.quitBehavior, .startClean)
         XCTAssertTrue(reloaded.opensNewTerminalsInSplit)
         XCTAssertEqual(reloaded.ansiColors[4], 0x123456)
     }
@@ -46,6 +49,7 @@ final class AppSettingsTests: XCTestCase {
         defaults.set(900, forKey: "mterm.settings.sidebarWidth")
         defaults.set([1, 2, 3], forKey: "mterm.settings.ansiColors")
         defaults.set("unsupported", forKey: "mterm.settings.newTerminalPlacement")
+        defaults.set("unsupported", forKey: "mterm.settings.quitBehavior")
 
         let settings = AppSettings(defaults: defaults)
 
@@ -54,6 +58,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.sidebarWidth, AppSettings.defaultSidebarWidth)
         XCTAssertEqual(settings.ansiColors, MTermTheme.ansiPalette)
         XCTAssertEqual(settings.newTerminalPlacement, .currentPane)
+        XCTAssertEqual(settings.quitBehavior, .restorePanes)
     }
 
     func testResetRestoresDefaultPaletteAndTypography() {

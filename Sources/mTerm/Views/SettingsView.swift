@@ -41,6 +41,22 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
+            Divider()
+
+            Text("Quit Behavior")
+                .font(.headline)
+
+            Picker("When quitting mTerm", selection: $settings.quitBehavior) {
+                ForEach(QuitBehavior.allCases) { behavior in
+                    Text(behavior.title).tag(behavior)
+                }
+            }
+            .pickerStyle(.radioGroup)
+
+            Text("Both options stop every terminal process. Starting clean removes saved panes but keeps workspace folders and app settings.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
             Spacer()
         }
         .padding(8)

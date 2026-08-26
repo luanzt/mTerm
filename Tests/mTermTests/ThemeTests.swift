@@ -1,4 +1,6 @@
+import AppKit
 import XCTest
+import SwiftTerm
 @testable import mTerm
 
 final class ThemeTests: XCTestCase {
@@ -23,8 +25,6 @@ final class ThemeTests: XCTestCase {
     func testTerminalColorsMatchITermDarkDefaults() {
         XCTAssertEqual(MTermTheme.terminalForeground, 0xDCDCDC)
         XCTAssertEqual(MTermTheme.terminalCaret, 0xFFFFFF)
-        XCTAssertEqual(MTermTheme.terminalLinkForeground, 0x61A3E8)
-        XCTAssertEqual(MTermTheme.terminalLinkHighlight, 0x328EEE)
         XCTAssertEqual(MTermTheme.ansiPalette, [
             0x14191E,
             0xB43C2A,
@@ -43,5 +43,18 @@ final class ThemeTests: XCTestCase {
             0x60FDFF,
             0xFFFFFF,
         ])
+    }
+
+    func testApplyingThemePreservesProviderLinkColors() {
+        let terminal = LocalProcessTerminalView(frame: .zero)
+        let providerLinkColor = NSColor(calibratedRed: 0.8, green: 0.3, blue: 0.2, alpha: 1)
+        let providerHighlightColor = NSColor(calibratedRed: 0.9, green: 0.5, blue: 0.1, alpha: 1)
+        terminal.linkForegroundColor = providerLinkColor
+        terminal.linkHighlightColor = providerHighlightColor
+
+        TerminalHostView.applyThemeColors(to: terminal)
+
+        XCTAssertEqual(terminal.linkForegroundColor, providerLinkColor)
+        XCTAssertEqual(terminal.linkHighlightColor, providerHighlightColor)
     }
 }

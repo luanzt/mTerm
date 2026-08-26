@@ -11,7 +11,7 @@ struct TerminalHostView: NSViewRepresentable {
     let fontName: String
     let fontSize: Double
     let ansiColors: [UInt32]
-    /// Drives the terminal's foreground/background/cursor/link colors from the
+    /// Drives the terminal's foreground/background/cursor colors from the
     /// active theme. Passed in (rather than read statically) so SwiftUI re-runs
     /// updateNSView when the user switches theme.
     let themeID: MTermThemeID
@@ -65,21 +65,11 @@ struct TerminalHostView: NSViewRepresentable {
             .compactMap { $0 as? NSScroller }
             .forEach { $0.isHidden = true }
         terminal.font = terminalFont
-        terminal.caretColor = NSColor(hex: MTermTheme.terminalCaret)
         terminal.wantsLayer = true
-        // Match the deck's near-black (#0A0C0F) so the terminal blends into the
-        // pane body instead of sitting on a pure-black rectangle.
-        terminal.layer?.backgroundColor = NSColor(hex: MTermTheme.terminalBackground).cgColor
-        // SwiftTerm's default foreground is a ~54% gray and its default ANSI
-        // palette is muted; install our bright foreground + vibrant palette so
-        // output isn't washed-out gray. (Colors live in MTermTheme.)
-        terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
-        terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
+        Self.applyThemeColors(to: terminal)
+        // SwiftTerm's default ANSI palette is muted; install our vibrant palette
+        // so output isn't washed out. (Colors live in MTermTheme.)
         terminal.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
-        // OSC 8 labels rest in a softer blue; command-hover brightens to the
-        // highlight blue + underline (and the pointing-hand cursor).
-        terminal.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
-        terminal.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
         searchController.terminalView = terminal
@@ -302,12 +292,7 @@ struct TerminalHostView: NSViewRepresentable {
             context.coordinator.appliedANSIColors = ansiColors
         }
         if context.coordinator.appliedThemeID != themeID {
-            nsView.caretColor = NSColor(hex: MTermTheme.terminalCaret)
-            nsView.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
-            nsView.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
-            nsView.layer?.backgroundColor = NSColor(hex: MTermTheme.terminalBackground).cgColor
-            nsView.linkForegroundColor = NSColor(hex: MTermTheme.terminalLinkForeground)
-            nsView.linkHighlightColor = NSColor(hex: MTermTheme.terminalLinkHighlight)
+            Self.applyThemeColors(to: nsView)
             context.coordinator.appliedThemeID = themeID
         }
         // Backup path in case the frame was already real before the observer was
@@ -324,6 +309,13 @@ struct TerminalHostView: NSViewRepresentable {
            let window = nsView.window, window.firstResponder !== nsView {
             window.makeFirstResponder(nsView)
         }
+    }
+
+    static func applyThemeColors(to terminal: LocalProcessTerminalView) {
+        terminal.caretColor = NSColor(hex: MTermTheme.terminalCaret)
+        terminal.nativeForegroundColor = NSColor(hex: MTermTheme.terminalForeground)
+        terminal.nativeBackgroundColor = NSColor(hex: MTermTheme.terminalBackground)
+        terminal.layer?.backgroundColor = NSColor(hex: MTermTheme.terminalBackground).cgColor
     }
 
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {

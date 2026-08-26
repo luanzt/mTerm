@@ -1049,6 +1049,59 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(restored.sessions.last?.title, "Terminal 3")
     }
 
+    func testPrepareForTerminationRestorePanesFlushesCurrentState() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-quit-restore-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 60)
+        let store = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        store.createSession(asNewPane: true)
+
+        store.prepareForTermination(.restorePanes)
+
+        let restored = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        XCTAssertEqual(restored.sessions.count, 2)
+        XCTAssertEqual(restored.grid.paneIDs.count, 2)
+    }
+
+    func testPrepareForTerminationStartCleanKeepsWorkspacesButDiscardsPanes() async throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("mterm-quit-clean-\(UUID().uuidString)",
+                                  isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let folder = WorkspaceFolder(path: root.path)
+        defaults.set(try JSONEncoder().encode([folder]), forKey: "edev.workspace.folders")
+        let snapshotStore = WorkspaceSnapshotStore(
+            fileURL: root.appendingPathComponent("workspace-v1.json"),
+            debounceInterval: 0.01)
+        let store = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        store.createSession(in: folder)
+        store.flushSnapshot()
+        store.toggleSidebar()
+
+        store.prepareForTermination(.startClean)
+        // Late view/PTY callbacks during app teardown must not recreate the
+        // snapshot after clean quit has discarded it.
+        store.toggleSidebar()
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertFalse(snapshotStore.containsStoredSnapshot)
+        let relaunched = WorkspaceStore(defaults: defaults, snapshotStore: snapshotStore)
+        XCTAssertEqual(relaunched.workspaces, [folder])
+        XCTAssertEqual(relaunched.sessions.count, 1)
+        XCTAssertNil(relaunched.sessions[0].workspaceID)
+        XCTAssertEqual(relaunched.grid.paneIDs, [relaunched.sessions[0].id])
+    }
+
     func testDurableMutationSchedulesSnapshotWithoutExplicitFlush() async throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory
