@@ -3,14 +3,14 @@
     <channel>
         <title>mTerm</title>
         <item>
-            <title>1.1.29</title>
-            <pubDate>Wed, 26 Aug 2026 20:56:34 +0700</pubDate>
-            <link>https://github.com/luanzt/mTerm/releases/tag/v1.1.29</link>
-            <sparkle:version>1.1.29</sparkle:version>
-            <sparkle:shortVersionString>1.1.29</sparkle:shortVersionString>
+            <title>1.1.30</title>
+            <pubDate>Sun, 30 Aug 2026 15:03:29 +0700</pubDate>
+            <link>https://github.com/luanzt/mTerm/releases/tag/v1.1.30</link>
+            <sparkle:version>1.1.30</sparkle:version>
+            <sparkle:shortVersionString>1.1.30</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/luanzt/mTerm/releases/download/v1.1.29/mTerm-1.1.29.dmg" length="2723221" type="application/octet-stream" sparkle:edSignature="i3veiOg1Kaf+8HYGmRD/B+Ln5LUuPNISxK7uaxtnhIDBi9fpOUix9tFOlD27E69DVL21N+UYdOQwVpfUd8NbBg=="/>
+            <enclosure url="https://github.com/luanzt/mTerm/releases/download/v1.1.30/mTerm-1.1.30.dmg" length="2731036" type="application/octet-stream" sparkle:edSignature="UODCYMrWtGi2XSxdujjI2hoXf4+bTm4H91cluscYzXICqJoyb6nSiYO7gMeF11cxBzOa3aGeAw8hPG55Q6sfAA=="/>
         </item>
     </channel>
 </rss>
