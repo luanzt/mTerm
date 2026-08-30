@@ -116,7 +116,7 @@ final class TerminalKeyboardInputTests: XCTestCase {
     }
 
     func testEscapeAndControlCInterruptActiveAgent() {
-        for command in ["claude", "codex"] {
+        for command in ["claude", "codex", "omp"] {
             XCTAssertTrue(TerminalKeyboardInput.isAgentInterruption(
                 keyCode: 53,
                 modifierFlags: [],

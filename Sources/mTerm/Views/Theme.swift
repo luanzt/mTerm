@@ -172,6 +172,10 @@ enum MTermTheme {
     static let claude = Color(hex: 0xD97757)  // Claude terracotta — running-claude icon bg
     static let codexBackground = Color(hex: 0xFFFFFF)  // Codex icon tile
     static let codexMark = Color(hex: 0x000000)        // OpenAI knot
+    static let ompBackground = Color(hex: 0xFFFFFF)    // PI icon tile
+    static let ompGradientStart = Color(hex: 0xED4ABF)
+    static let ompGradientMiddle = Color(hex: 0x9B4DFF)
+    static let ompGradientEnd = Color(hex: 0x5AD8E6)
     static let terminalIconBackground = Color(hex: 0x2A3038)
     static let terminalIconChevron = Color(hex: 0x32D74B)
     static let terminalIconUnderscore = Color(hex: 0xFFFFFF)

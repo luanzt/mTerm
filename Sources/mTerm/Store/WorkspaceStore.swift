@@ -56,13 +56,16 @@ final class WorkspaceStore: ObservableObject {
     /// icon in the sidebar and pane header, requests notification permission in
     /// context, and clears on close.
     @Published private(set) var codexSessionIDs: Set<SessionRecord.ID> = []
+    /// Sessions whose foreground command is OMP. OMP's native terminal title
+    /// protocol supplies both the session name and authoritative request state.
+    @Published private(set) var ompSessionIDs: Set<SessionRecord.ID> = []
     /// Agent sessions currently processing a submitted response. Claude lifecycle
-    /// hooks and Codex's TUI-owned `run-state` title drive this state; attention,
-    /// interruption, and foreground exit provide authoritative clear boundaries.
+    /// hooks plus Codex and OMP terminal-title run states drive this state;
+    /// attention, interruption, and foreground exit provide clear boundaries.
     @Published private(set) var agentWorkingSessionIDs: Set<SessionRecord.ID> = []
-    /// Validated OSC 0/2 titles emitted by active Claude/Codex processes. Kept
-    /// separately so each session's stable "Terminal N" title is restored when
-    /// shell integration reports that the pane is idle again.
+    /// Validated OSC 0/2 titles emitted by active Claude, Codex, or OMP processes.
+    /// Kept separately so each session's stable "Terminal N" title is restored
+    /// when shell integration reports that the pane is idle again.
     @Published private(set) var agentSessionTitles: [SessionRecord.ID: String] = [:]
     /// User-renamed sessions always display their stable title instead of an
     /// agent-supplied transient OSC title.
@@ -327,6 +330,7 @@ final class WorkspaceStore: ObservableObject {
         savedGrid = nil
         claudeSessionIDs.remove(session.id)
         codexSessionIDs.remove(session.id)
+        ompSessionIDs.remove(session.id)
         agentWorkingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
@@ -412,9 +416,8 @@ final class WorkspaceStore: ObservableObject {
     }
 
     /// Reported by shell integration when a pane's foreground command changes.
-    /// `"claude"` or `"codex"` marks the row with the matching agent icon; any
-    /// other command (or `nil` for an idle prompt) clears it. Publishes only on
-    /// an actual change.
+    /// `"claude"`, `"codex"`, or `"omp"` marks the row with the matching agent
+    /// icon; any other command (or `nil` for an idle prompt) clears it.
     func setForeground(_ id: SessionRecord.ID, command: String?) {
         // A new shell command starts a fresh title scope. This also restores the
         // stable title on `precmd` idle after Ctrl-C, `/exit`, or normal exit.
@@ -438,6 +441,13 @@ final class WorkspaceStore: ObservableObject {
             codexSessionIDs.remove(id)
         }
 
+        let isOMP = command == "omp"
+        if isOMP, !ompSessionIDs.contains(id) {
+            ompSessionIDs.insert(id)
+        } else if !isOMP, ompSessionIDs.contains(id) {
+            ompSessionIDs.remove(id)
+        }
+
         // Starting an interactive agent does not imply it already has a prompt
         // to process. Submission is reported separately from TerminalHostView.
         agentWorkingSessionIDs.remove(id)
@@ -445,17 +455,19 @@ final class WorkspaceStore: ObservableObject {
     }
 
     /// Starts (or resumes) Claude's work through its `UserPromptSubmit` hook.
-    /// Codex activity comes from its TUI-owned `run-state` title instead of key
-    /// inference, so local commands and approval interactions cannot stick it on.
+    /// Codex and OMP activity comes from TUI-owned terminal-title run state
+    /// instead of key inference, so local interactions cannot stick it on.
     func reportAgentInputSubmitted(_ id: SessionRecord.ID) {
         guard claudeSessionIDs.contains(id) else { return }
         agentWorkingSessionIDs.insert(id)
     }
 
-    /// Escape and Ctrl-C interrupt an in-flight Claude/Codex turn and return the
-    /// TUI to user input without necessarily producing an attention event.
+    /// Escape and Ctrl-C interrupt an in-flight agent turn and return the TUI to
+    /// user input without necessarily producing another lifecycle event.
     func reportAgentWorkInterrupted(_ id: SessionRecord.ID) {
-        guard claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) else { return }
+        guard claudeSessionIDs.contains(id)
+                || codexSessionIDs.contains(id)
+                || ompSessionIDs.contains(id) else { return }
         agentWorkingSessionIDs.remove(id)
     }
 
@@ -464,11 +476,23 @@ final class WorkspaceStore: ObservableObject {
 
         let isClaude = claudeSessionIDs.contains(id)
         let isCodex = codexSessionIDs.contains(id)
-        guard isClaude || isCodex else { return }
+        let isOMP = ompSessionIDs.contains(id)
+        guard isClaude || isCodex || isOMP else { return }
 
         var scopedTitle = rawTitle
-        if isCodex,
-           let update = CodexIntegration.parseTerminalTitle(rawTitle) {
+        if isOMP {
+            guard let update = OMPIntegration.parseTerminalTitle(rawTitle) else { return }
+            if update.isWorking {
+                if !agentWorkingSessionIDs.contains(id) {
+                    agentWorkingSessionIDs.insert(id)
+                }
+            } else if agentWorkingSessionIDs.contains(id) {
+                agentWorkingSessionIDs.remove(id)
+            }
+            guard let conversationTitle = update.conversationTitle else { return }
+            scopedTitle = conversationTitle
+        } else if isCodex,
+                  let update = CodexIntegration.parseTerminalTitle(rawTitle) {
             if update.isWorking {
                 agentWorkingSessionIDs.insert(id)
             } else {

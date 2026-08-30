@@ -22,7 +22,7 @@ struct TerminalHostView: NSViewRepresentable {
     /// basename while one runs, or nil when the prompt goes idle.
     var onForeground: (String?) -> Void = { _ in }
     /// Reports standard OSC 0/2 terminal-title updates. WorkspaceStore accepts
-    /// them only while Claude or Codex is the pane's foreground command.
+    /// them only while Claude, Codex, or OMP is the pane's foreground command.
     var onTitleChange: (String) -> Void = { _ in }
     /// Reports standard OSC 7 current-directory updates so the pane header and
     /// sidebar can follow the directory of the live shell.
@@ -141,7 +141,8 @@ struct TerminalHostView: NSViewRepresentable {
             switch ShellIntegration.parse(payload) {
             case .run(let command):
                 context.coordinator.isClaudeResponseExpected = false
-                if command == "claude" || command == "codex" {
+                context.coordinator.lastOMPTerminalTitleUpdate = nil
+                if command == "claude" || command == "codex" || command == "omp" {
                     context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
                 } else {
                     context.coordinator.agentActivationUptime = nil
@@ -159,6 +160,7 @@ struct TerminalHostView: NSViewRepresentable {
                 }
             case .idle:
                 context.coordinator.foregroundCommand = nil
+                context.coordinator.lastOMPTerminalTitleUpdate = nil
                 context.coordinator.agentActivationUptime = nil
                 context.coordinator.isClaudeResponseExpected = false
                 DispatchQueue.main.async {
@@ -365,6 +367,9 @@ struct TerminalHostView: NSViewRepresentable {
         var onFileDrop: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
+        /// OMP animates its working separator every 80 ms. Keep the last parsed
+        /// semantic update so spinner-frame-only title changes never redraw SwiftUI.
+        var lastOMPTerminalTitleUpdate: OMPIntegration.TerminalTitleUpdate?
 
         init(restorationIntent: AgentResumeDescriptor?) {
             restoreCommandCoordinator = TerminalRestoreCommandCoordinator(
@@ -425,11 +430,22 @@ struct TerminalHostView: NSViewRepresentable {
             source: LocalProcessTerminalView,
             title: String
         ) {
-            // Codex's mTerm-scoped title contains a stable TUI-owned run state.
-            // Deliver it in feed order so an already-queued `Working` update
-            // cannot land after OSC 9 clears the turn. Claude still needs the
-            // debounce below because it animates decoration in its title.
+            // Codex's mTerm-scoped title and OMP's native title contain stable,
+            // TUI-owned run state. Deliver transitions in feed order so a queued
+            // working update cannot land after the TUI becomes idle.
             if foregroundCommand == "codex" {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    pendingTitleUpdate?.cancel()
+                    pendingTitleUpdate = nil
+                    onTerminalTitle(title)
+                }
+                return
+            }
+            if foregroundCommand == "omp" {
+                guard let update = OMPIntegration.parseTerminalTitle(title),
+                      update != lastOMPTerminalTitleUpdate else { return }
+                lastOMPTerminalTitleUpdate = update
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     pendingTitleUpdate?.cancel()
@@ -525,15 +541,15 @@ enum TerminalKeyboardInput {
             .isEmpty
     }
 
-    /// Claude and Codex both use Escape or Ctrl-C to interrupt an active turn.
+    /// Claude, Codex, and OMP use Escape or Ctrl-C to interrupt an active turn.
     /// That transition can remain inside the TUI, so shell foreground tracking
-    /// and attention hooks do not reliably observe it.
+    /// and lifecycle channels do not reliably observe it.
     static func isAgentInterruption(
         keyCode: UInt16,
         modifierFlags: NSEvent.ModifierFlags,
         foregroundCommand: String?
     ) -> Bool {
-        guard foregroundCommand == "claude" || foregroundCommand == "codex" else {
+        guard ["claude", "codex", "omp"].contains(foregroundCommand) else {
             return false
         }
 

@@ -409,9 +409,11 @@ private struct SessionSidebarRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            SessionStatusIcon(status: session.status,
-                              isClaude: workspace.claudeSessionIDs.contains(session.id),
-                              isCodex: workspace.codexSessionIDs.contains(session.id))
+            SessionStatusIcon(
+                status: session.status,
+                isClaude: workspace.claudeSessionIDs.contains(session.id),
+                isCodex: workspace.codexSessionIDs.contains(session.id),
+                isOMP: workspace.ompSessionIDs.contains(session.id))
             VStack(alignment: .leading, spacing: 2) {
                 if isRenaming {
                     TextField("Terminal title", text: $titleDraft)
@@ -648,14 +650,16 @@ private struct SidebarIconButton: View {
     }
 }
 
-/// The sidebar row's leading icon. Three distinct looks:
-/// - default terminal: a graphite squircle with a green `>` and white underscore;
-/// - Claude running: the orange squircle app-mark with a white Claude sunburst;
-/// - Codex running: the white squircle app-mark with the black OpenAI knot.
+/// The sidebar row and pane header's leading icon:
+/// - default terminal: graphite squircle with a green prompt;
+/// - Claude: orange tile with the white Claude sunburst;
+/// - Codex: white tile with the black OpenAI knot;
+/// - PI: white tile with OMP's gradient Pi mark.
 private struct SessionStatusIcon: View {
     let status: SessionRecord.Status
     let isClaude: Bool
     let isCodex: Bool
+    let isOMP: Bool
 
     var body: some View {
         ZStack {
@@ -673,6 +677,20 @@ private struct SessionStatusIcon: View {
                 OpenAILogo()
                     .fill(MTermTheme.codexMark, style: FillStyle(eoFill: true))
                     .frame(width: 11, height: 11)
+            } else if isOMP {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(MTermTheme.ompBackground)
+                    .frame(width: 17, height: 17)
+                PILogo()
+                    .fill(LinearGradient(
+                        colors: [
+                            MTermTheme.ompGradientStart,
+                            MTermTheme.ompGradientMiddle,
+                            MTermTheme.ompGradientEnd,
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing))
+                    .frame(width: 12, height: 12)
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -711,6 +729,16 @@ struct TerminalChevronLogo: Shape {
 
 struct TerminalUnderscoreLogo: Shape {
     static let pathData = "M12 17 L21 17 L21 20 L12 20 Z"
+
+    func path(in rect: CGRect) -> Path {
+        absoluteSVGPath(Self.pathData, in: rect)
+    }
+}
+
+/// OMP's Pi mark from omp.sh/favicon.svg, normalized from its 64×64 source
+/// viewBox into the shared 24×24 vector coordinate space.
+struct PILogo: Shape {
+    static let pathData = "M5.25 6 L18.75 6 L18.75 9 L15 9 L15 21 L12 21 L12 9 L9.75 9 L9.75 17.25 L6.75 17.25 L6.75 9 L5.25 9 Z"
 
     func path(in rect: CGRect) -> Path {
         absoluteSVGPath(Self.pathData, in: rect)
@@ -1150,7 +1178,8 @@ private struct TerminalPane: View {
             SessionStatusIcon(
                 status: session.status,
                 isClaude: workspace.claudeSessionIDs.contains(session.id),
-                isCodex: workspace.codexSessionIDs.contains(session.id))
+                isCodex: workspace.codexSessionIDs.contains(session.id),
+                isOMP: workspace.ompSessionIDs.contains(session.id))
             Text(workspace.displayTitle(for: session))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(MTermTheme.text)

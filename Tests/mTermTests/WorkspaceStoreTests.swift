@@ -697,6 +697,17 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.codexSessionIDs.contains(id))
     }
 
+    func testSetForegroundTracksOMP() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let id = store.sessions[0].id
+
+        store.setForeground(id, command: "omp")
+        XCTAssertTrue(store.ompSessionIDs.contains(id))
+
+        store.setForeground(id, command: "git")
+        XCTAssertFalse(store.ompSessionIDs.contains(id))
+    }
+
     func testAgentWorkingStateFollowsSubmissionAndAttention() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]
@@ -735,6 +746,20 @@ final class WorkspaceStoreTests: XCTestCase {
         store.setAgentTitle(
             session.id,
             title: "codex | Ready | Fix authentication flow")
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), "Fix authentication flow")
+    }
+
+    func testOMPWorkingStateFollowsAuthoritativeTerminalRunState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+
+        store.setForeground(session.id, command: "omp")
+        store.setAgentTitle(session.id, title: "π ⠋ Fix authentication flow")
+        XCTAssertTrue(store.agentWorkingSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), "Fix authentication flow")
+
+        store.setAgentTitle(session.id, title: "π > Fix authentication flow")
         XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
         XCTAssertEqual(store.displayTitle(for: session), "Fix authentication flow")
     }
@@ -873,6 +898,19 @@ final class WorkspaceStoreTests: XCTestCase {
         store.close(session)
 
         XCTAssertFalse(store.codexSessionIDs.contains(session.id))
+        XCTAssertEqual(store.displayTitle(for: session), session.title)
+    }
+
+    func testCloseClearsOMPState() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let session = store.sessions[0]
+        store.setForeground(session.id, command: "omp")
+        store.setAgentTitle(session.id, title: "π ⠋ Fix launch crash")
+
+        store.close(session)
+
+        XCTAssertFalse(store.ompSessionIDs.contains(session.id))
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
         XCTAssertEqual(store.displayTitle(for: session), session.title)
     }
 

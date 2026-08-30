@@ -341,34 +341,38 @@ Notification Center: it may contain assistant text, a command, or a file path.
 The native alert uses a privacy-safe generic summary and still routes back to
 the exact pane when clicked. The same foreground-command state swaps both the
 sidebar and pane-header terminal prompt marks for the white OpenAI app mark while
-Codex is active. Claude uses its terracotta app mark in those same two locations.
+Codex is active. Claude uses its terracotta app mark in those locations, and OMP
+uses a white tile with the official gradient Pi mark from `omp.sh/favicon.svg`.
 Ordinary terminal sessions use a graphite app tile with a green `>` and white
 underscore instead of a status dot; exited sessions dim that prompt motif.
 
-The sidebar alone shows a spinner while an active Claude/Codex TUI is processing
-a response. Claude's official lifecycle hooks own its state. After a trusted
-Claude permission, elicitation, or agent-needs-input notification, Return may
-also resume work without a new top-level prompt. Codex activity must come only
+The sidebar alone shows a spinner while an active Claude/Codex/OMP TUI is
+processing a response. Claude's official lifecycle hooks own its state. After a
+trusted Claude permission, elicitation, or agent-needs-input notification, Return
+may also resume work without a new top-level prompt. Codex activity must come only
 from the TUI-owned `run-state` title: `Starting`/`Working`/`Thinking`/`Waiting`
-set working and `Ready` clears it. Never infer Codex activity from Return; slash
-commands, menus, approvals, and short-lived local interactions make keyboard
-inference asymmetric and can strand a spinner when no matching OSC 9 attention
-event follows. OSC 9 remains the attention channel and an additional clear
-boundary. Escape/Ctrl-C, returning to the shell, or closing the session also
-clears either agent's state. Keep this indicator out of pane headers and terminal
-content.
+set working and `Ready` clears it. OMP's native `tui.titleState` OSC title owns
+its state: `π <braille-frame> <session>` is working, `π > <session>` is idle, and
+`π ! <session>` needs user attention. Spinner-frame-only OMP title updates are
+deduplicated before reaching SwiftUI. Never infer Codex or OMP activity from
+Return; slash commands, menus, approvals, and local interactions make keyboard
+inference asymmetric and can strand a spinner. Codex OSC 9 remains an attention
+channel and additional clear boundary. Escape/Ctrl-C, returning to the shell, or
+closing the session also clears agent state. Keep this indicator out of pane
+headers and terminal content.
 
 #### Agent conversation titles
 
 Claude Code publishes its current conversation title through standard OSC 0/2;
-the Codex invocation override above requests scoped run-state + thread-title
-segments.
+the Codex invocation override requests scoped run-state + thread-title segments,
+and OMP natively publishes its Pi-prefixed session title and lifecycle separator.
 `TerminalHostView` receives those updates through SwiftTerm's process delegate.
 Claude titles are briefly debounced to avoid rendering animated decoration;
-scoped Codex run-state titles are delivered immediately to preserve event order.
-`WorkspaceStore` validates and accepts the result only while shell integration
-reports `claude` or `codex` as the pane's foreground command. It strips Codex's
-`codex | <run-state> |` protocol prefix before title/locator handling.
+scoped Codex updates and semantic OMP state transitions are delivered immediately
+to preserve event order. `WorkspaceStore` accepts results only while shell
+integration reports `claude`, `codex`, or `omp` as the pane's foreground command.
+It strips Codex's `codex | <run-state> |` or OMP's `π <separator>` protocol prefix
+before display-title handling.
 
 Codex's `thread-title` falls back to a UUID until the user runs `/rename` or
 starts with `--name`; never display that identifier. `CodexThreadTitleResolver`
