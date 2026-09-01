@@ -9,9 +9,13 @@
 #
 # Output: build/mTerm-<version>.dmg  (drag mTerm.app into Applications)
 #
-# The app is ad-hoc code-signed (`codesign -s -`) so it launches on Apple
-# Silicon, but it is NOT notarized: on first open the user must right-click the
-# app and choose "Open" (or allow it in System Settings ▸ Privacy & Security).
+# Signing: if the stable self-signed identity "$MTERM_SIGN_IDENTITY" (default
+# "mTerm Self-Signed") exists in the keychain it is used, so macOS keeps
+# previously granted permissions across updates. Run scripts/create-signing-cert.sh
+# once to create it; otherwise the build falls back to ad-hoc signing (which makes
+# macOS re-prompt for permissions after every update). Either way the app is NOT
+# notarized: on first open, right-click the app and choose "Open" (or allow it in
+# System Settings > Privacy & Security).
 set -euo pipefail
 
 APP_NAME="mTerm"
@@ -80,8 +84,18 @@ if [ -f "$ROOT/packaging/AppIcon.icns" ]; then
     echo "    embedded packaging/AppIcon.icns"
 fi
 
-echo "==> Ad-hoc code-signing"
-codesign --force --sign - "$APP"
+echo "==> Code-signing"
+SIGN_IDENTITY="${MTERM_SIGN_IDENTITY:-mTerm Self-Signed}"
+if security find-identity -p codesigning 2>/dev/null | grep -qF "$SIGN_IDENTITY"; then
+    echo "    using stable identity: $SIGN_IDENTITY"
+    codesign --force --sign "$SIGN_IDENTITY" "$APP"
+else
+    echo "    WARNING: signing identity '$SIGN_IDENTITY' not found; using ad-hoc." >&2
+    echo "    Ad-hoc builds get a new code identity every release, so macOS" >&2
+    echo "    re-prompts for Accessibility/Full Disk/folder permissions after" >&2
+    echo "    each update. Run scripts/create-signing-cert.sh once to fix this." >&2
+    codesign --force --sign - "$APP"
+fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> Building $(basename "$DMG")"

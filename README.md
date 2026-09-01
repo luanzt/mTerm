@@ -28,8 +28,9 @@ and drag **mTerm** into your **Applications** folder.
 
 ### First launch
 
-mTerm is ad-hoc signed but *not notarized*, so macOS Gatekeeper will block a
-normal double-click the first time. Pick whichever is easiest:
+mTerm is signed with a self-signed certificate but *not notarized*, so macOS
+Gatekeeper will block a normal double-click the first time. Pick whichever is
+easiest:
 
 - **Right-click the app ▸ Open**, then confirm in the dialog — once is enough.
 - Or System Settings ▸ Privacy & Security ▸ *Open Anyway*.
@@ -175,10 +176,13 @@ swift test --filter WorkspaceStoreTests/testToggleMaximizeCollapsesThenRestoresL
 ```
 
 The script does a release build, assembles `mTerm.app` (embedding Sparkle and
-`packaging/AppIcon.icns` when the icon is present), **ad-hoc code-signs** it so
-it launches on Apple Silicon, and packs it into a drag-to-Applications `.dmg`.
-The result is **not notarized** — see the first-launch note under
-[Download](#download).
+`packaging/AppIcon.icns` when the icon is present), code-signs it with a stable
+self-signed identity (`mTerm Self-Signed`, created once via
+`scripts/create-signing-cert.sh`) so macOS keeps granted permissions across
+updates, and packs it into a drag-to-Applications `.dmg`. Without that identity
+it falls back to ad-hoc signing and macOS re-prompts for permissions after every
+update. The result is **not notarized** either way — see the first-launch note
+under [Download](#download).
 
 Sparkle provides in-app updates for releases after `v1.1.2`. Its
 `mterm-ed25519` EdDSA private key lives in the maintainer's macOS Keychain; only

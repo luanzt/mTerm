@@ -20,6 +20,12 @@ feed, tag it, and publish a GitHub Release with the `.dmg` attached. Wraps
    Keychain. Verify
    `.build/artifacts/sparkle/Sparkle/bin/generate_keys --account mterm-ed25519 -p`
    prints `LzG6J9ahpYdZHqj/wzaotCscwjxGcVnN6zfv10dqqsU=`.
+6. A stable code-signing identity must exist so macOS keeps previously granted
+   permissions across updates: `security find-identity -v -p codesigning` must
+   list `mTerm Self-Signed` (or your `MTERM_SIGN_IDENTITY`). If missing, run
+   `scripts/create-signing-cert.sh` once. Without it, `package.sh` falls back to
+   ad-hoc signing and every update re-prompts for Accessibility/Full Disk/folder
+   permissions.
 
 ## Choose the version
 
@@ -59,9 +65,11 @@ asset, and that the raw `main/appcast.xml` enclosure points to the new asset.
 
 - **Confirm with the user before `gh release create`** — a GitHub release is
   public and outward-facing. State the version and that it will be published.
-- The app is **ad-hoc code-signed / not notarized**. The DMG has a Sparkle EdDSA
-  signature in the appcast, but that is not Apple notarization. Don't claim
-  otherwise. First manual install needs right-click ▸ Open.
+- The app is signed with a stable self-signed identity (`mTerm Self-Signed`) but
+  **not notarized**. The DMG has a Sparkle EdDSA signature in the appcast, but
+  that is not Apple notarization. Don't claim otherwise. First manual install
+  needs right-click ▸ Open. If no signing identity is present, the build falls
+  back to ad-hoc and macOS re-prompts for permissions after every update.
 - If the build fails, stop — do **not** create the tag or the release.
 - If appcast generation or signature verification fails, stop — do **not**
   create the tag or the release.

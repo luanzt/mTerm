@@ -459,8 +459,15 @@ must continue to:
 - preserve Sparkle's nested signatures, sign the outer app without
   `codesign --deep`, then verify with `codesign --verify --deep --strict`.
 
-The app is currently ad-hoc signed and **not notarized**. Sparkle's EdDSA
-signature authenticates update archives, but it is not Apple notarization.
+The app is signed with a stable self-signed code-signing identity (default CN
+`mTerm Self-Signed`, overridable via `MTERM_SIGN_IDENTITY`), created once by
+`scripts/create-signing-cert.sh`. A stable identity keeps the app's designated
+requirement constant across builds, so macOS TCC grants (Accessibility, Full
+Disk Access, approved folders) survive updates instead of re-prompting every
+time. If the identity is missing, `package.sh` falls back to ad-hoc signing and
+warns; ad-hoc builds get a new identity per release and macOS re-prompts for
+permissions after each update. The app is **not notarized** either way: Sparkle's
+EdDSA signature authenticates update archives, but it is not Apple notarization.
 
 ## Release and update feed
 

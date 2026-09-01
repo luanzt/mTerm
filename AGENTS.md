@@ -72,8 +72,10 @@ summary:
 
 Do not publish a tag/release if packaging, appcast generation, EdDSA
 verification, or tests fail. The Sparkle private key lives only in the macOS
-Keychain account `mterm-ed25519`; never commit or log it. The app is ad-hoc
-signed and not Apple-notarized, so do not describe it as notarized.
+Keychain account `mterm-ed25519`; never commit or log it. The app is signed with
+a stable self-signed identity (`mTerm Self-Signed`, via
+`scripts/create-signing-cert.sh`) so macOS keeps granted permissions across
+updates; it is not Apple-notarized, so do not describe it as notarized.
 
 When Codex creates a commit in this repository, include:
 
