@@ -91,6 +91,10 @@ struct TerminalHostView: NSViewRepresentable {
                 coordinator.receiveDroppedFiles(urls, in: terminal)
             }
         }
+        terminal.onImagePaste = { [weak coordinator = context.coordinator, weak terminal] pasteboard in
+            guard let coordinator, let terminal else { return false }
+            return coordinator.receiveImagePaste(pasteboard, in: terminal)
+        }
         terminal.processDelegate = context.coordinator
         // Defer the child PTY winsize while a pane divider is being dragged, then
         // flush the final size once on release. Driven by NotificationCenter (not
@@ -417,13 +421,37 @@ struct TerminalHostView: NSViewRepresentable {
             guard !urls.isEmpty else { return }
             onFileDrop()
             terminal.window?.makeFirstResponder(terminal)
-            let bracketedPaste = terminal.getTerminal().bracketedPasteMode
             for chunk in TerminalFileDrop.terminalInputChunks(
                 for: urls,
-                bracketedPaste: bracketedPaste
+                bracketedPaste: terminal.getTerminal().bracketedPasteMode,
+                foregroundCommand: foregroundCommand
             ) {
                 terminal.send(chunk)
             }
+        }
+
+        func receiveImagePaste(
+            _ pasteboard: NSPasteboard,
+            in terminal: LocalProcessTerminalView
+        ) -> Bool {
+            guard TerminalImagePaste.shouldHandle(
+                pasteboard,
+                foregroundCommand: foregroundCommand
+            ) else {
+                return false
+            }
+            guard let imageURL = TerminalImagePaste.materializeImage(from: pasteboard) else {
+                // The paste is still consumed: delegating to SwiftTerm here
+                // would forward the stale file URL or string that just failed.
+                return true
+            }
+            terminal.window?.makeFirstResponder(terminal)
+            terminal.send(
+                EscapeSequences.bracketedPasteStart
+                    + Array(imageURL.path.utf8)
+                    + EscapeSequences.bracketedPasteEnd
+            )
+            return true
         }
 
         func setTerminalTitle(
@@ -566,6 +594,7 @@ enum TerminalKeyboardInput {
 /// Register the real SwiftTerm view as the destination instead.
 final class FileDroppableTerminalView: LocalProcessTerminalView {
     var onFileDrop: ([URL]) -> Void = { _ in }
+    var onImagePaste: (NSPasteboard) -> Bool = { _ in false }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -587,6 +616,11 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         defersProcessWindowSizeUpdates = false
+    }
+
+    override func paste(_ sender: Any) {
+        guard !onImagePaste(.general) else { return }
+        super.paste(sender)
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -617,6 +651,75 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
     }
 }
 
+enum TerminalImagePaste {
+    private static let supportedFileExtensions: Set<String> = [
+        "gif", "jpeg", "jpg", "png", "webp",
+    ]
+
+    static func shouldHandle(
+        _ pasteboard: NSPasteboard,
+        foregroundCommand: String?
+    ) -> Bool {
+        foregroundCommand == "omp" && hasImage(in: pasteboard)
+    }
+
+    /// Finder also advertises a generated icon bitmap for copied files. When
+    /// file URLs exist, trust their extensions so a non-image file never
+    /// attaches its generic Finder icon.
+    static func hasImage(in pasteboard: NSPasteboard) -> Bool {
+        let fileURLs = FileDroppableTerminalView.fileURLs(from: pasteboard)
+        if !fileURLs.isEmpty {
+            return fileURLs.contains(where: isImageFile)
+        }
+        return clipboardImage(from: pasteboard) != nil
+    }
+
+    /// Snapshot the clipboard pixels into an app-owned file before handing the
+    /// path to a TUI. Screenshot tools may advertise transient file URLs that
+    /// disappear before the foreground process can open them.
+    static func materializeImage(from pasteboard: NSPasteboard) -> URL? {
+        let fileImage = FileDroppableTerminalView.fileURLs(from: pasteboard)
+            .first(where: isImageFile)
+            .flatMap { NSImage(contentsOf: $0) }
+        guard let pngData = pngData(from: fileImage ?? clipboardImage(from: pasteboard)) else {
+            return nil
+        }
+
+        let fileName = "mterm-paste-\(Int(Date().timeIntervalSince1970 * 1_000))-\(UUID()).png"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        do {
+            try pngData.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    static func isImageFile(_ url: URL) -> Bool {
+        supportedFileExtensions.contains(url.pathExtension.lowercased())
+    }
+
+    private static func clipboardImage(from pasteboard: NSPasteboard) -> NSImage? {
+        let imageTypes = NSImage.imageTypes
+            .map { NSPasteboard.PasteboardType($0) }
+            .filter { type in type != NSPasteboard.PasteboardType.fileURL }
+        guard let type = pasteboard.availableType(from: imageTypes),
+              let data = pasteboard.data(forType: type) else {
+            return nil
+        }
+        return NSImage(data: data)
+    }
+
+    private static func pngData(from image: NSImage?) -> Data? {
+        guard let image,
+              let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData) else {
+            return nil
+        }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+}
+
 enum TerminalFileDrop {
     /// Produces shell arguments but deliberately no newline, so dropping a file
     /// fills the current command line without executing it.
@@ -625,20 +728,57 @@ enum TerminalFileDrop {
         return urls.map { shellEscape($0.path) }.joined(separator: " ") + " "
     }
 
-    /// Programs such as Codex and Claude enable bracketed-paste mode so they can
-    /// distinguish pasted paths from ordinary typing. Emit one paste event per
-    /// file: image-aware TUIs can attach several images independently, while
-    /// shells still receive the same escaped paths and trailing spaces.
-    static func terminalInputChunks(for urls: [URL], bracketedPaste: Bool) -> [[UInt8]] {
+    /// Image-aware TUIs detect attachments from a bracketed paste of the raw
+    /// path. Force that framing for safe image paths even before mode 2004 is
+    /// observed, and omit shell escaping or trailing whitespace so the TUI can
+    /// test the exact path. Other files retain mTerm's shell-oriented behavior.
+    static func terminalInputChunks(
+        for urls: [URL],
+        bracketedPaste: Bool,
+        foregroundCommand: String?
+    ) -> [[UInt8]] {
         guard !urls.isEmpty else { return [] }
-        guard bracketedPaste else {
-            return [Array(shellInput(for: urls).utf8)]
+        let bracketOtherFiles = bracketedPaste || foregroundCommand == "omp"
+        var chunks: [[UInt8]] = []
+        var pendingOtherFiles: [URL] = []
+
+        func appendPendingOtherFiles() {
+            guard !pendingOtherFiles.isEmpty else { return }
+            if bracketOtherFiles {
+                chunks.append(contentsOf: pendingOtherFiles.map { url in
+                    EscapeSequences.bracketedPasteStart
+                        + Array(shellInput(for: [url]).utf8)
+                        + EscapeSequences.bracketedPasteEnd
+                })
+            } else {
+                chunks.append(Array(shellInput(for: pendingOtherFiles).utf8))
+            }
+            pendingOtherFiles.removeAll(keepingCapacity: true)
         }
 
-        return urls.map { url in
-            EscapeSequences.bracketedPasteStart
-                + Array(shellInput(for: [url]).utf8)
-                + EscapeSequences.bracketedPasteEnd
+        for url in urls {
+            guard canPasteImagePathRaw(url) else {
+                pendingOtherFiles.append(url)
+                continue
+            }
+            appendPendingOtherFiles()
+            chunks.append(
+                EscapeSequences.bracketedPasteStart
+                    + Array(url.path.utf8)
+                    + EscapeSequences.bracketedPasteEnd
+            )
+        }
+        appendPendingOtherFiles()
+        return chunks
+    }
+
+    private static func canPasteImagePathRaw(_ url: URL) -> Bool {
+        guard TerminalImagePaste.isImageFile(url) else { return false }
+        let unsafeCharacters = CharacterSet(charactersIn: "\"'`$;&|<>(){}[]*?!#\\")
+        return url.path.unicodeScalars.allSatisfy { scalar in
+            scalar.value >= 0x20
+                && scalar.value != 0x7F
+                && !unsafeCharacters.contains(scalar)
         }
     }
 
