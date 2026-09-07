@@ -148,8 +148,9 @@ that same array. Visible pane headers show the matching `⌘N` badge immediately
 to the left of the maximize/restore button; hidden sessions have no shortcut.
 Keep the badge and header buttons horizontally fixed so a long agent title can
 truncate without collapsing those controls. Pane headers provide maximize and
-hide controls only; closing a terminal is intentionally available from its
-sidebar row instead.
+hide controls. While the pointer is over the hide button, holding Command changes
+its minus icon to an x; clicking in that state closes the terminal session rather
+than merely hiding its pane. Closing is also available from the sidebar row.
 
 Visible panes can be dragged from anywhere in their header, including its empty
 space and controls; ordinary clicks on header controls still perform their

@@ -1158,10 +1158,9 @@ private struct TerminalPane: View {
                                 : "Maximize this pane") {
                 workspace.toggleMaximize(session.id)
             }
-            PaneHeaderButton(icon: "minus",
-                             help: "Hide this pane (keep the session)") {
-                workspace.hide(session)
-            }
+            PaneVisibilityButton(
+                onHide: { workspace.hide(session) },
+                onClose: { workspace.close(session) })
         }
         .padding(.leading, 11)
         .padding(.trailing, 8)
@@ -1223,6 +1222,109 @@ private struct PaneShortcutBadge: View {
             }
             .fixedSize(horizontal: true, vertical: false)
             .help("Switch to this pane (⌘\(number))")
+    }
+}
+
+enum PaneVisibilityAction: Equatable {
+    case hide
+    case close
+
+    static func resolve(
+        isHovering: Bool,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Self {
+        isHovering && modifierFlags.contains(.command) ? .close : .hide
+    }
+}
+
+private struct PaneVisibilityButton: View {
+    let onHide: () -> Void
+    let onClose: () -> Void
+    @State private var isHovering = false
+    @State private var modifierFlags = NSEvent.modifierFlags
+
+    private var action: PaneVisibilityAction {
+        PaneVisibilityAction.resolve(
+            isHovering: isHovering,
+            modifierFlags: modifierFlags)
+    }
+
+    var body: some View {
+        PaneHeaderButton(
+            icon: action == .close ? "xmark" : "minus",
+            help: action == .close
+                ? "Close this pane and end the session"
+                : "Hide this pane (keep the session)"
+        ) {
+            switch PaneVisibilityAction.resolve(
+                isHovering: isHovering,
+                modifierFlags: NSEvent.modifierFlags
+            ) {
+            case .hide:
+                onHide()
+            case .close:
+                onClose()
+            }
+        }
+        .onHover { hovering in
+            isHovering = hovering
+            modifierFlags = NSEvent.modifierFlags
+        }
+        .background {
+            ModifierFlagsObserver { flags in
+                modifierFlags = flags
+            }
+        }
+    }
+}
+
+private struct ModifierFlagsObserver: NSViewRepresentable {
+    let onChange: (NSEvent.ModifierFlags) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onChange: onChange)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        context.coordinator.startMonitoring()
+        return NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onChange = onChange
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stopMonitoring()
+    }
+
+    final class Coordinator {
+        var onChange: (NSEvent.ModifierFlags) -> Void
+        private var monitor: Any?
+
+        init(onChange: @escaping (NSEvent.ModifierFlags) -> Void) {
+            self.onChange = onChange
+        }
+
+        func startMonitoring() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) {
+                [weak self] event in
+                self?.onChange(event.modifierFlags)
+                return event
+            }
+        }
+
+        func stopMonitoring() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
+
+        deinit {
+            stopMonitoring()
+        }
     }
 }
 
