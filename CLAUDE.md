@@ -206,7 +206,11 @@ Finder file drops are registered directly on the `FileDroppableTerminalView`
 subclass rather than on a surrounding SwiftUI modifier: AppKit routes dragging
 sessions to the embedded `NSView`. A drop focuses its pane and sends one escaped
 path per file, using bracketed paste when the terminal mode requests it so
-image-aware agent TUIs can attach Simulator screenshots.
+image-aware agent TUIs can attach Simulator screenshots. OMP is the sole
+exception: image drops use one raw bracketed path without trailing whitespace,
+even before bracketed-paste mode is observed. Clipboard bitmap interception and
+temporary PNG materialization are likewise OMP-only; Codex and Claude retain
+their native paste handling.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.

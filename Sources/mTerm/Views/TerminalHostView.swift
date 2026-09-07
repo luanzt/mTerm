@@ -728,10 +728,10 @@ enum TerminalFileDrop {
         return urls.map { shellEscape($0.path) }.joined(separator: " ") + " "
     }
 
-    /// Image-aware TUIs detect attachments from a bracketed paste of the raw
-    /// path. Force that framing for safe image paths even before mode 2004 is
-    /// observed, and omit shell escaping or trailing whitespace so the TUI can
-    /// test the exact path. Other files retain mTerm's shell-oriented behavior.
+    /// OMP detects attachments from a bracketed paste of the raw path. Force
+    /// that framing for its safe image paths even before mode 2004 is observed,
+    /// and omit shell escaping or trailing whitespace so OMP can test the exact
+    /// path. Other programs retain mTerm's shell-oriented behavior.
     static func terminalInputChunks(
         for urls: [URL],
         bracketedPaste: Bool,
@@ -757,7 +757,7 @@ enum TerminalFileDrop {
         }
 
         for url in urls {
-            guard canPasteImagePathRaw(url) else {
+            guard foregroundCommand == "omp", canPasteImagePathRaw(url) else {
                 pendingOtherFiles.append(url)
                 continue
             }

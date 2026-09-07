@@ -179,19 +179,49 @@ final class TerminalFileDropTests: XCTestCase {
         XCTAssertFalse(TerminalFileDrop.shellInput(for: [url]).contains("\n"))
     }
 
-    func testImageDropUsesRawBracketedPathWithoutTrailingSpace() {
+    func testOMPImageDropUsesRawBracketedPathWithoutTrailingSpace() {
         let url = URL(fileURLWithPath: "/tmp/Simulator Screenshot.png")
 
         let chunks = TerminalFileDrop.terminalInputChunks(
             for: [url],
             bracketedPaste: true,
-            foregroundCommand: nil
+            foregroundCommand: "omp"
         )
 
         XCTAssertEqual(chunks.count, 1)
         XCTAssertEqual(
             String(decoding: chunks[0], as: UTF8.self),
             "\u{1B}[200~/tmp/Simulator Screenshot.png\u{1B}[201~"
+        )
+    }
+
+    func testCodexImageDropPreservesShellEscapedBracketedPayload() {
+        let url = URL(fileURLWithPath: "/tmp/Simulator Screenshot.png")
+
+        let chunks = TerminalFileDrop.terminalInputChunks(
+            for: [url],
+            bracketedPaste: true,
+            foregroundCommand: "codex"
+        )
+
+        XCTAssertEqual(
+            chunks.map { String(decoding: $0, as: UTF8.self) },
+            ["\u{1B}[200~/tmp/Simulator\\ Screenshot.png \u{1B}[201~"]
+        )
+    }
+
+    func testClaudeImageDropPreservesShellEscapedBracketedPayload() {
+        let url = URL(fileURLWithPath: "/tmp/Simulator Screenshot.png")
+
+        let chunks = TerminalFileDrop.terminalInputChunks(
+            for: [url],
+            bracketedPaste: true,
+            foregroundCommand: "claude"
+        )
+
+        XCTAssertEqual(
+            chunks.map { String(decoding: $0, as: UTF8.self) },
+            ["\u{1B}[200~/tmp/Simulator\\ Screenshot.png \u{1B}[201~"]
         )
     }
 
@@ -225,7 +255,7 @@ final class TerminalFileDropTests: XCTestCase {
         XCTAssertEqual(chunks.count, 2)
     }
 
-    func testImageDropForcesBracketedPasteBeforeTerminalModeIsObserved() {
+    func testPlainTerminalImageDropUsesShellInputWhenBracketedPasteIsDisabled() {
         let url = URL(fileURLWithPath: "/tmp/screenshot.png")
 
         let chunks = TerminalFileDrop.terminalInputChunks(
@@ -236,7 +266,7 @@ final class TerminalFileDropTests: XCTestCase {
 
         XCTAssertEqual(
             chunks.map { String(decoding: $0, as: UTF8.self) },
-            ["\u{1B}[200~/tmp/screenshot.png\u{1B}[201~"]
+            ["/tmp/screenshot.png "]
         )
     }
 
