@@ -29,9 +29,10 @@ feed, tag it, and publish a GitHub Release with the `.dmg` attached. Wraps
 
 ## Choose the version
 
-- Ask the user for the version if they didn't give one. Format is semver
-  (`MAJOR.MINOR.PATCH`), tag is `v<version>` (e.g. `0.2.0` → tag `v0.2.0`).
-- Show the latest existing tag for context: `git tag --sort=-v:refname | head -1`.
+- **Auto-increment PATCH version** from the latest tag. Extract the latest tag
+  (e.g., `v1.1.32`), parse it, increment PATCH by 1 (e.g., `v1.1.33`), and
+  proceed without asking the user.
+- Example: `v1.1.32` → increment to `v1.1.33`
 - Refuse to reuse an existing tag: `git tag -l v<version>` and
   `gh release view v<version>` must both be empty.
 
@@ -63,8 +64,9 @@ asset, and that the raw `main/appcast.xml` enclosure points to the new asset.
 
 ## Rules
 
-- **Confirm with the user before `gh release create`** — a GitHub release is
-  public and outward-facing. State the version and that it will be published.
+- **No user confirmation needed** — automatically proceed with all steps once
+  preflight checks pass and version is auto-incremented. Release is fully
+  automated from preflight through appcast commit.
 - The app is signed with a stable self-signed identity (`mTerm Self-Signed`) but
   **not notarized**. The DMG has a Sparkle EdDSA signature in the appcast, but
   that is not Apple notarization. Don't claim otherwise. First manual install
@@ -73,6 +75,8 @@ asset, and that the raw `main/appcast.xml` enclosure points to the new asset.
 - If the build fails, stop — do **not** create the tag or the release.
 - If appcast generation or signature verification fails, stop — do **not**
   create the tag or the release.
+- **Retry on transient failures** — if a step fails, check if it's transient
+  (network timeout, temporary lock), retry up to 2 times before giving up.
 - If the user only wants source (no binary), skip `package.sh` and drop the
   `.dmg` arg from `gh release create`; do not update the appcast.
 
