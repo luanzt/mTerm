@@ -59,7 +59,7 @@ final class TerminalFileDropTests: XCTestCase {
     }
 
 
-    func testOnlyOMPInterceptsImageClipboard() throws {
+    func testOMPAndCodexInterceptImageClipboard() throws {
         let pasteboard = NSPasteboard(name: .init("mterm-agent-image-paste-\(UUID().uuidString)"))
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setData(try pngData(), forType: .png))
@@ -67,15 +67,44 @@ final class TerminalFileDropTests: XCTestCase {
         XCTAssertTrue(
             TerminalImagePaste.shouldHandle(pasteboard, foregroundCommand: "omp")
         )
+        XCTAssertTrue(
+            TerminalImagePaste.shouldHandle(pasteboard, foregroundCommand: "codex")
+        )
+        // Claude reads the OS clipboard itself, so it keeps native paste.
         XCTAssertFalse(
             TerminalImagePaste.shouldHandle(pasteboard, foregroundCommand: "claude")
         )
         XCTAssertFalse(
-            TerminalImagePaste.shouldHandle(pasteboard, foregroundCommand: "codex")
-        )
-        XCTAssertFalse(
             TerminalImagePaste.shouldHandle(pasteboard, foregroundCommand: nil)
         )
+    }
+
+    func testCoordinatorMaterializesClipboardBitmapForCodex() throws {
+        let pasteboard = NSPasteboard(name: .init("mterm-codex-image-paste-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setData(try pngData(), forType: .png))
+        let terminal = RecordingLocalProcessTerminalView(frame: .zero)
+        let coordinator = TerminalHostView.Coordinator(restorationIntent: nil)
+        coordinator.foregroundCommand = "codex"
+
+        XCTAssertTrue(coordinator.receiveImagePaste(pasteboard, in: terminal))
+
+        var input = String(decoding: terminal.sentBytes, as: UTF8.self)
+        // A bracketed paste may or may not wrap the path depending on terminal
+        // mode; strip the markers if present, then verify a real PNG was written.
+        input = input
+            .replacingOccurrences(of: "\u{1B}[200~", with: "")
+            .replacingOccurrences(of: "\u{1B}[201~", with: "")
+        let materializedPath = input
+            .replacingOccurrences(of: "\\", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard !materializedPath.isEmpty else {
+            return XCTFail("Expected a materialized clipboard image path for Codex")
+        }
+        defer { try? FileManager.default.removeItem(atPath: materializedPath) }
+        XCTAssertEqual(URL(fileURLWithPath: materializedPath).pathExtension, "png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: materializedPath))
+        XCTAssertNotNil(NSImage(contentsOfFile: materializedPath))
     }
 
     func testCoordinatorMaterializesClipboardBitmapInsteadOfForwardingStaleCleanShotURL() throws {

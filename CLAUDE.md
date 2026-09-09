@@ -210,8 +210,11 @@ path per file, using bracketed paste when the terminal mode requests it so
 image-aware agent TUIs can attach Simulator screenshots. OMP is the sole
 exception: image drops use one raw bracketed path without trailing whitespace,
 even before bracketed-paste mode is observed. Clipboard bitmap interception and
-temporary PNG materialization are likewise OMP-only; Codex and Claude retain
-their native paste handling.
+temporary PNG materialization run for OMP and Codex: SwiftTerm's native paste
+forwards only clipboard *text*, so a copied bitmap would otherwise be dropped.
+The materialized PNG is routed through the same file-drop channel (raw bracketed
+path for OMP, shell-escaped path for Codex). Claude keeps native paste handling
+because Claude Code reads the OS clipboard itself.
 Standard OSC 7 current-directory reports flow through the process delegate into
 `WorkspaceStore`, which updates the folder label shared by the pane header and
 sidebar without recreating the persistent terminal view.

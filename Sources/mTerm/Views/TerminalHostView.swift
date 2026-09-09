@@ -446,11 +446,17 @@ struct TerminalHostView: NSViewRepresentable {
                 return true
             }
             terminal.window?.makeFirstResponder(terminal)
-            terminal.send(
-                EscapeSequences.bracketedPasteStart
-                    + Array(imageURL.path.utf8)
-                    + EscapeSequences.bracketedPasteEnd
-            )
+            // Route the materialized image through the same channel as a file
+            // drop: OMP receives the raw bracketed path it tests exactly, while
+            // Codex receives the shell-escaped path in its composer just as a
+            // dropped image file would.
+            for chunk in TerminalFileDrop.terminalInputChunks(
+                for: [imageURL],
+                bracketedPaste: terminal.getTerminal().bracketedPasteMode,
+                foregroundCommand: foregroundCommand
+            ) {
+                terminal.send(chunk)
+            }
             return true
         }
 
@@ -660,7 +666,12 @@ enum TerminalImagePaste {
         _ pasteboard: NSPasteboard,
         foregroundCommand: String?
     ) -> Bool {
-        foregroundCommand == "omp" && hasImage(in: pasteboard)
+        // SwiftTerm's native paste only forwards clipboard *text*, so a copied
+        // bitmap reaches neither OMP nor Codex. Claude reads the OS clipboard
+        // itself, so it keeps native paste; OMP and Codex need mTerm to
+        // materialize the image and hand over its path.
+        (foregroundCommand == "omp" || foregroundCommand == "codex")
+            && hasImage(in: pasteboard)
     }
 
     /// Finder also advertises a generated icon bitmap for copied files. When
