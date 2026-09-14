@@ -160,6 +160,11 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         workspace.toggleFocusedPaneMaximize()
     }
 
+    @objc private func hideFocusedPane(_ sender: Any?) {
+        guard let session = workspace.selectedSession else { return }
+        workspace.hide(session)
+    }
+
     /// SwiftTerm treats Option as Meta and consumes Option-letter key events
     /// before AppKit can dispatch an Option-only menu equivalent. Handle this
     /// application shortcut ahead of the focused terminal while leaving every
@@ -350,6 +355,13 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         toggleMaximizeItem.keyEquivalentModifierMask = .option
         toggleMaximizeItem.target = self
         panesMenu.addItem(toggleMaximizeItem)
+        let hidePaneItem = NSMenuItem(
+            title: "Hide Focused Pane",
+            action: #selector(hideFocusedPane(_:)),
+            keyEquivalent: "w")
+        hidePaneItem.keyEquivalentModifierMask = .command
+        hidePaneItem.target = self
+        panesMenu.addItem(hidePaneItem)
         panesMenu.addItem(.separator())
         for n in 1...6 {
             let item = NSMenuItem(title: "Pane \(n)",
