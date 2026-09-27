@@ -51,6 +51,9 @@ struct TerminalHostView: NSViewRepresentable {
     /// Cleans up any remaining process in this terminal's Unix session.
     var onProcessTeardown: () -> Void = {}
 
+    /// Foreground commands whose TUI owns the normal-buffer transcript.
+    static let agentCommands: Set<String> = ["claude", "codex", "omp"]
+
     func makeCoordinator() -> Coordinator {
         Coordinator(restorationIntent: restorationIntent)
     }
@@ -146,7 +149,7 @@ struct TerminalHostView: NSViewRepresentable {
             case .run(let command):
                 context.coordinator.isClaudeResponseExpected = false
                 context.coordinator.lastOMPTerminalTitleUpdate = nil
-                if command == "claude" || command == "codex" || command == "omp" {
+                if Self.agentCommands.contains(command) {
                     context.coordinator.agentActivationUptime = ProcessInfo.processInfo.systemUptime
                 } else {
                     context.coordinator.agentActivationUptime = nil
@@ -408,11 +411,20 @@ struct TerminalHostView: NSViewRepresentable {
             paneResizeObservers = [began, ended]
         }
 
+        /// Runs once the new winsize reaches the PTY. Agent TUIs answer that
+        /// SIGWINCH by clearing scrollback (ED3) and replaying the transcript;
+        /// SwiftTerm keeps a scrolled-back viewport pinned through the replay,
+        /// stranding it at the top of history. The row being read is erased by
+        /// the replay anyway, so follow the bottom instead.
         func sizeChanged(
             source: LocalProcessTerminalView,
             newCols: Int,
             newRows: Int
-        ) {}
+        ) {
+            guard let foregroundCommand,
+                  TerminalHostView.agentCommands.contains(foregroundCommand) else { return }
+            source.scroll(toPosition: 1)
+        }
 
         func receiveDroppedFiles(
             _ urls: [URL],

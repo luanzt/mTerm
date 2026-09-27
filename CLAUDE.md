@@ -177,6 +177,9 @@ constraints learned the hard way:
   size. Resizing on park/unpark sends SIGWINCH, and Claude Code/OMP answer it by
   clearing scrollback (ED3) and replaying the transcript; a scrolled-back
   SwiftTerm viewport stays pinned through that replay and lands at the top.
+  Resizes that do reach the PTY (window resize, split, a differently sized
+  cell) snap an agent pane to the bottom in `Coordinator.sizeChanged` so the
+  replay is followed; plain shells keep their scrolled-back position.
 - The deck's outer `.frame(..., alignment: .topLeading)` alignment is **required** —
   `.offset` doesn't contribute to intrinsic size, so a centered frame would shift
   every pane right / overflow.
