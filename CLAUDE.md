@@ -173,6 +173,10 @@ constraints learned the hard way:
 - Every `SessionRecord` renders a `TerminalPane`; sessions **not** in the grid are
   parked off-screen (opacity 0) so their shell process keeps running. Never
   destroy a hidden session's view to "save resources".
+- `ParkedPaneFrames` parks a session at its **last visible size**, not the deck
+  size. Resizing on park/unpark sends SIGWINCH, and Claude Code/OMP answer it by
+  clearing scrollback (ED3) and replaying the transcript; a scrolled-back
+  SwiftTerm viewport stays pinned through that replay and lands at the top.
 - The deck's outer `.frame(..., alignment: .topLeading)` alignment is **required** —
   `.offset` doesn't contribute to intrinsic size, so a centered frame would shift
   every pane right / overflow.

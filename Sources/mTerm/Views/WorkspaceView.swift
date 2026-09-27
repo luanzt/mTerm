@@ -812,9 +812,32 @@ private func absoluteSVGPath(_ pathData: String, in rect: CGRect) -> Path {
     return path
 }
 
+/// Lays out sessions that are not in the grid off-screen at their last
+/// on-screen pane size. Parking at any other size resizes the PTY, and agent
+/// TUIs (Claude Code, OMP) answer SIGWINCH by clearing scrollback (ED3) and
+/// replaying the transcript. SwiftTerm keeps a scrolled-back viewport pinned
+/// through that replay, so the session reappeared at the top of its history.
+final class ParkedPaneFrames {
+    private var sizes: [SessionRecord.ID: CGSize] = [:]
+
+    /// Returns `visible` (remembering its size) for a grid pane; otherwise an
+    /// off-screen rect at the session's last visible size, or the deck size if
+    /// it has never been on screen.
+    func frame(for id: SessionRecord.ID, visible: CGRect?, deckSize: CGSize) -> CGRect {
+        if let visible {
+            sizes[id] = visible.size
+            return visible
+        }
+        let size = sizes[id] ?? deckSize
+        return CGRect(x: -size.width - 10, y: 0,
+                      width: max(size.width, 1), height: max(size.height, 1))
+    }
+}
+
 private struct TerminalDeck: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
+    @State private var parkedFrames = ParkedPaneFrames()
 
     /// Breathing room between panes (and around the deck edge). Panes are inset
     /// by half of this on every side so adjacent panes are separated by a full
@@ -827,11 +850,11 @@ private struct TerminalDeck: View {
             ZStack(alignment: .topLeading) {
                 ForEach(workspace.sessions) { session in
                     let rect = frames[session.id]
+                    let frame = parkedFrames.frame(
+                        for: session.id, visible: rect, deckSize: proxy.size)
                     TerminalPane(session: session, isVisible: rect != nil)
-                        .frame(width: (rect ?? offscreen(proxy.size)).width,
-                               height: (rect ?? offscreen(proxy.size)).height)
-                        .offset(x: (rect ?? offscreen(proxy.size)).minX,
-                                y: (rect ?? offscreen(proxy.size)).minY)
+                        .frame(width: frame.width, height: frame.height)
+                        .offset(x: frame.minX, y: frame.minY)
                         .opacity(rect == nil ? 0 : 1)
                         .allowsHitTesting(rect != nil)
                 }
@@ -872,11 +895,6 @@ private struct TerminalDeck: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    // Off-screen rect for sessions not in the grid (keeps the process alive).
-    private func offscreen(_ size: CGSize) -> CGRect {
-        CGRect(x: -size.width - 10, y: 0, width: max(size.width, 1), height: max(size.height, 1))
     }
 
     private func paneFrames(in size: CGSize) -> [SessionRecord.ID: CGRect] {
