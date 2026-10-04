@@ -238,9 +238,15 @@ animation, off-screen parking, the grid invariant) — see
 
 ### SwiftTerm fork
 
-`Package.swift` pins **`luanzt/SwiftTerm`**, a fork of upstream with a single
-change: `Buffer.isReflowEnabled = false`. Upstream rewraps lines on resize, which
-makes zsh / powerlevel10k leave duplicated prompt lines on every resize. To bump
-SwiftTerm, rebase the fork's `edev-no-reflow` branch onto the new upstream
-revision, re-apply that one-line patch, and update the `revision:` pin — don't
-point back at upstream.
+`Package.swift` pins **`luanzt/SwiftTerm`** at the tip of the fork's `mterm`
+branch, which carries these changes on top of upstream:
+
+- Rewrap-on-resize is a per-terminal toggle, off for shell prompts so zsh /
+  powerlevel10k don't leave duplicated prompt lines on resize.
+- Child PTY window-size updates can be deferred during a pane-divider drag.
+- Configurable resting/highlight colors for OSC 8 links.
+- A manual selection survives streaming output while mouse tracking is off.
+
+To bump SwiftTerm, rebase the fork's `mterm` branch onto the new upstream
+revision, keep all of these changes, and update the `revision:` pin — don't
+point back at upstream. Details are in [`CLAUDE.md`](./CLAUDE.md).
