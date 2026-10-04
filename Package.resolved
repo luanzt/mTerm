@@ -24,7 +24,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/luanzt/SwiftTerm.git",
       "state" : {
-        "revision" : "880894f727b99164ba7c589492d464a90b6388cc"
+        "revision" : "79c8ac26a0fc579e744d5025223ac58859587679"
       }
     }
   ],

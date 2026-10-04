@@ -447,6 +447,10 @@ these mTerm-specific changes:
   emitted by the terminal application. On ⌘-hover, SwiftTerm keeps that color
   while adding an underline. macOS uses the pointing-hand cursor only while the
   configured link mode allows activation.
+- Output clears a manual selection only while the running program has mouse
+  tracking enabled (`allowMouseReporting && mouseMode != .off`). Upstream clears
+  it on every output chunk whenever `allowMouseReporting` is true (the default),
+  so an agent spinner or status-line repaint dismissed a selection mid-drag.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
 these changes on top of upstream. (`edev-no-reflow` is the working branch these
