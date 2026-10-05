@@ -417,6 +417,51 @@ foreground-command marker arrives, including the shell's idle `precmd` marker
 after the agent actually exits. A Ctrl-C that only cancels an in-agent turn does
 not return to the shell and therefore must not restore `Terminal N`.
 
+### iPad remote control (`Remote/`)
+
+`RemoteControl` (@MainActor, environment object) lets the paired iPad app
+(`~/Documents/mterm-app`, separate repo) drive live sessions. The Mac stays the
+only host of shells; the iPad runs its own SwiftTerm emulator and UI.
+
+- **Wire contract:** `Remote/RemoteProtocol.swift` must stay byte-identical with
+  `mterm-app/Packages/MTermRemoteKit/Sources/MTermRemoteKit/RemoteProtocol.swift`
+  (compare with `shasum`). Bump `RemoteProtocol.version` for incompatible
+  changes. Transport is WebSocket over TLS 1.2 PSK (`RemoteServer`,
+  Network.framework, main queue so frames keep PTY/input order). Clients must
+  connect through `RemoteProtocol.endpoint(host:port:)` (a URL endpoint); a
+  host/port endpoint aborts the WebSocket handshake. The 32-byte key lives in
+  the Keychain (`RemoteKeyStore`) and travels only in the `mterm://pair` link
+  from Settings › Remote. The server is off by default.
+- **Size ownership:** `RemoteOwnership` decides the PTY size per session. Real
+  client actions (`open`, `input`, `claim`) claim it; passive `attach` and
+  `viewport` reports never move ownership (they only refit the current owner).
+  Typing, clicking, pasting, or dropping files in the Mac pane — or clicking
+  its banner — hands the session back before the input lands.
+- **Remote-created terminals:** `create` (client-chosen session ID, optional
+  workspace) calls `WorkspaceStore.createBackgroundSession`, which adds the
+  session to the sidebar without touching the pane grid. The claim is recorded
+  first, so `RemoteControl.register` pins the new view before its shell
+  starts: the PTY is born at the client grid and never resizes on attach.
+- **Grid pinning:** `FileDroppableTerminalView.pinnedGrid` overrides
+  `setFrameSize` so the emulator and child PTY resize synchronously to the
+  client grid regardless of pane/parked frames, and restores the last requested
+  frame when cleared. Cell size comes from `getOptimalFrameSize()` because
+  SwiftTerm keeps it internal. Font changes call `cellSizeDidChange()`.
+  Any cols/rows change — including Mac-side pane, window, or font resizes
+  while the Mac drives — fires `onGridChange`; `RemoteControl` answers with a
+  debounced fresh `screen` so a watching client never renders output at a stale
+  width.
+- **Streaming:** the view tees PTY bytes after feeding its own emulator
+  (`onOutput`), so a `RemoteScreenSnapshot` taken between chunks is exact. Every
+  ownership or geometry change sends each subscriber a `screen` frame (reset +
+  grid + snapshot) ordered with the output stream. The snapshot clamps rows to
+  the current width (stale tails after a shrink would rewrap) and restores
+  cursor, scroll region, SGR, DECCKM, bracketed paste, cursor visibility, and
+  kitty keyboard flags. Output to a congested client is dropped and replaced by
+  a fresh screen once the link drains.
+- The Mac emulator answers terminal queries; the iPad mirror drops its own
+  replies. Remote input is written with `process.send`, bypassing the Mac view.
+
 ### Theme
 
 `Views/Theme.swift` — `MTermTheme` holds the whole "Emerald" dark palette + a
@@ -430,6 +475,9 @@ reset defaults; `AppSettings.ansiColors` is the live user-selected palette.
 ## Dependencies
 
 ### SwiftTerm (fork)
+
+The iPad app (`mterm-app`) pins the same fork revision for its mirror emulator;
+bump both pins together.
 
 `Package.swift` pins **`luanzt/SwiftTerm`** (a fork), not upstream. The fork carries
 these mTerm-specific changes:

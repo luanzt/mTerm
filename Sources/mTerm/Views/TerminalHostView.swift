@@ -7,6 +7,8 @@ struct TerminalHostView: NSViewRepresentable {
     let isVisible: Bool
     let isFocused: Bool
     let searchController: TerminalSearchController
+    /// Streams this session to paired remote clients and applies their grid.
+    let remoteControl: RemoteControl
     let isFindBarOpen: Bool
     let fontName: String
     let fontSize: Double
@@ -76,6 +78,13 @@ struct TerminalHostView: NSViewRepresentable {
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
         searchController.terminalView = terminal
+        remoteControl.register(terminal, for: session.id)
+        context.coordinator.unregisterRemote = { [weak remoteControl, weak terminal, id = session.id] in
+            MainActor.assumeIsolated {
+                guard let remoteControl, let terminal else { return }
+                remoteControl.unregister(terminal, for: id)
+            }
+        }
         context.coordinator.appliedFontName = fontName
         context.coordinator.appliedFontSize = fontSize
         context.coordinator.appliedThemeID = themeID
@@ -112,6 +121,9 @@ struct TerminalHostView: NSViewRepresentable {
                   terminal.window?.firstResponder === terminal else {
                 return event
             }
+            // Typing on the Mac takes the pane back from a remote client before
+            // the key reaches the PTY at the restored size.
+            terminal.noteLocalInteraction()
             let foregroundCommand = context.coordinator.foregroundCommand
             if TerminalKeyboardInput.isAgentSubmission(
                 keyCode: event.keyCode,
@@ -295,6 +307,7 @@ struct TerminalHostView: NSViewRepresentable {
             nsView.font = terminalFont
             context.coordinator.appliedFontName = fontName
             context.coordinator.appliedFontSize = fontSize
+            (nsView as? FileDroppableTerminalView)?.cellSizeDidChange()
         }
         if context.coordinator.appliedANSIColors != ansiColors {
             nsView.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
@@ -330,6 +343,7 @@ struct TerminalHostView: NSViewRepresentable {
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
         coordinator.cancelPendingTitleUpdate()
         nsView.processDelegate = nil
+        coordinator.unregisterRemote()
         if let observer = coordinator.frameObserver {
             NotificationCenter.default.removeObserver(observer)
             coordinator.frameObserver = nil
@@ -355,6 +369,7 @@ struct TerminalHostView: NSViewRepresentable {
         var terminal: LocalProcessTerminalView?
         var didStartProcess = false
         var frameObserver: NSObjectProtocol?
+        var unregisterRemote: () -> Void = {}
         var keyDownMonitor: Any?
         var startShell: ((LocalProcessTerminalView) -> Void)?
         var foregroundCommand: String?
@@ -613,15 +628,146 @@ enum TerminalKeyboardInput {
 final class FileDroppableTerminalView: LocalProcessTerminalView {
     var onFileDrop: ([URL]) -> Void = { _ in }
     var onImagePaste: (NSPasteboard) -> Bool = { _ in false }
+    /// Receives every PTY output chunk after the local emulator consumed it,
+    /// so a snapshot taken between chunks never misses or repeats bytes.
+    var onOutput: (ArraySlice<UInt8>) -> Void = { _ in }
+    /// Called before local keyboard/mouse input reaches a remote-pinned grid.
+    var onLocalInteraction: () -> Void = {}
+    /// Called whenever the emulator's columns or rows change, from any cause
+    /// (pane layout, window resize, font, pin).
+    var onGridChange: () -> Void = {}
+    private(set) var isCursorHidden = false
+    /// Normal-buffer cursor when the alternate screen was entered; DECSC
+    /// saved it there and `?1049l` restores it. SwiftTerm keeps the normal
+    /// buffer internal while the alternate screen is active.
+    private(set) var normalCursorAtAlternateSwitch: (x: Int, y: Int)?
+    /// The size SwiftUI/AppKit last asked for; restored when the pin ends.
+    private var requestedSize: NSSize = .zero
+    private var reportedGrid = (cols: 0, rows: 0)
+
+    /// While set, the terminal grid follows a remote client instead of the pane
+    /// frame. Applying it resizes the emulator and the child PTY synchronously.
+    var pinnedGrid: RemoteGrid? {
+        didSet {
+            guard pinnedGrid != oldValue else { return }
+            clipHostIfPinned()
+            setFrameSize(requestedSize)
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        requestedSize = frame.size
+        reportedGrid = (getTerminal().cols, getTerminal().rows)
         registerForDraggedTypes([.fileURL])
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        requestedSize = frame.size
+        reportedGrid = (getTerminal().cols, getTerminal().rows)
         registerForDraggedTypes([.fileURL])
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        requestedSize = newSize
+        defer { reportGridChangeIfNeeded() }
+        guard let pinnedGrid, let metrics = cellMetrics else {
+            super.setFrameSize(newSize)
+            return
+        }
+        // Half a cell of slack keeps SwiftTerm's floor(size / cell) on the
+        // pinned grid despite floating-point rounding.
+        let pinned = NSSize(
+            width: metrics.cell.width * (CGFloat(pinnedGrid.columns) + 0.5) + metrics.scrollerWidth,
+            height: metrics.cell.height * (CGFloat(pinnedGrid.rows) + 0.5))
+        if superview?.isFlipped == false {
+            setFrameOrigin(NSPoint(x: frame.origin.x, y: frame.maxY - pinned.height))
+        }
+        super.setFrameSize(pinned)
+    }
+
+    /// A font change alters the cell size: re-derive a pinned frame, and
+    /// report the grid SwiftTerm recomputed for an unpinned one.
+    func cellSizeDidChange() {
+        if pinnedGrid != nil {
+            setFrameSize(requestedSize)
+        } else {
+            reportGridChangeIfNeeded()
+        }
+    }
+
+    private func reportGridChangeIfNeeded() {
+        let terminal = getTerminal()
+        let grid = (cols: terminal.cols, rows: terminal.rows)
+        guard grid != reportedGrid else { return }
+        reportedGrid = grid
+        onGridChange()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        // A pin applied before SwiftUI inserted the view (remote-created
+        // sessions) had no host view to clip yet.
+        clipHostIfPinned()
+    }
+
+    /// A pinned grid can exceed the pane; SwiftUI shape clipping does not
+    /// reliably clip AppKit-backed views, so clip at the host view.
+    private func clipHostIfPinned() {
+        guard pinnedGrid != nil, let superview else { return }
+        superview.wantsLayer = true
+        superview.layer?.masksToBounds = true
+    }
+
+    override func bufferActivated(source: Terminal) {
+        // Entering the alternate screen copies the normal cursor into it.
+        normalCursorAtAlternateSwitch = source.isCurrentBufferAlternate
+            ? (source.buffer.x, source.buffer.y)
+            : nil
+        super.bufferActivated(source: source)
+    }
+
+    /// SwiftTerm keeps its cell size internal; `getOptimalFrameSize()` is
+    /// exactly cell × grid plus the width reserved for a visible scroller.
+    private var cellMetrics: (cell: CGSize, scrollerWidth: CGFloat)? {
+        let terminal = getTerminal()
+        guard terminal.cols > 0, terminal.rows > 0 else { return nil }
+        let scrollerWidth = subviews
+            .compactMap { $0 as? NSScroller }
+            .first { !$0.isHidden }
+            .map { NSScroller.scrollerWidth(for: .regular, scrollerStyle: $0.scrollerStyle) } ?? 0
+        let optimal = getOptimalFrameSize()
+        return (CGSize(width: (optimal.width - scrollerWidth) / CGFloat(terminal.cols),
+                       height: optimal.height / CGFloat(terminal.rows)),
+                scrollerWidth)
+    }
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        onOutput(slice)
+    }
+
+    override func showCursor(source: Terminal) {
+        isCursorHidden = false
+        super.showCursor(source: source)
+    }
+
+    override func hideCursor(source: Terminal) {
+        isCursorHidden = true
+        super.hideCursor(source: source)
+    }
+
+    /// Local typing or clicking takes the session back from a remote client
+    /// before the input is delivered at the restored size.
+    func noteLocalInteraction() {
+        guard pinnedGrid != nil else { return }
+        onLocalInteraction()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        noteLocalInteraction()
+        super.mouseDown(with: event)
     }
 
     /// Coalesce the child PTY winsize during a window live-resize the same way a
@@ -637,6 +783,7 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
     }
 
     override func paste(_ sender: Any) {
+        noteLocalInteraction()
         guard !onImagePaste(.general) else { return }
         super.paste(sender)
     }
@@ -652,6 +799,7 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let urls = fileURLs(from: sender)
         guard !urls.isEmpty else { return false }
+        noteLocalInteraction()
         onFileDrop(urls)
         return true
     }

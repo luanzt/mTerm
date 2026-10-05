@@ -38,6 +38,11 @@ pane-layout, updater, or release behavior.
   message into Notification Center. Native alerts must remain background-only
   with click-through to the originating session.
 - Use `MTermTheme` rather than reintroducing system colors.
+- iPad remote: keep `Sources/mTerm/Remote/RemoteProtocol.swift` byte-identical
+  with the copy in the `mterm-app` repo's `MTermRemoteKit` package. Only real
+  client actions (open, input, claim) may move a session's PTY size to the
+  iPad; passive attach/viewport reports must not, and local Mac input hands
+  the session back before it is delivered.
 
 ## Pane shortcuts
 

@@ -14,12 +14,13 @@ struct SessionRecord: Codable, Hashable, Identifiable {
     var status: Status
 
     static func shell(
+        id: UUID = UUID(),
         title: String = "Terminal",
         workingDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path,
         workspaceID: WorkspaceFolder.ID? = nil
     ) -> SessionRecord {
         SessionRecord(
-            id: UUID(),
+            id: id,
             title: title,
             workingDirectory: workingDirectory,
             workspaceID: workspaceID,

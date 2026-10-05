@@ -313,6 +313,25 @@ final class WorkspaceStore: ObservableObject {
         addSession(session, asNewPane: asNewPane, replacingPane: focusedPaneSessionID)
     }
 
+    /// Starts a terminal requested by a remote client. It joins the sidebar
+    /// without touching the pane grid, so the Mac layout stays as the user left
+    /// it. Returns false for a duplicate ID or an unknown workspace.
+    @discardableResult
+    func createBackgroundSession(
+        id: SessionRecord.ID,
+        workspaceID: WorkspaceFolder.ID?
+    ) -> Bool {
+        guard session(for: id) == nil else { return false }
+        var directory: String?
+        if let workspaceID {
+            guard let workspace = workspaces.first(where: { $0.id == workspaceID }) else { return false }
+            directory = workspace.path
+        }
+        sessions.append(makeSession(id: id, workingDirectory: directory, workspaceID: workspaceID))
+        persist()
+        return true
+    }
+
     /// Creates a fresh shell beside an existing terminal, inheriting its live
     /// working directory and workspace grouping without duplicating the process.
     func createSessionInSameDirectory(as sourceID: SessionRecord.ID) {
@@ -1039,12 +1058,14 @@ final class WorkspaceStore: ObservableObject {
             sessionSequence: sessionSequence)
     }
 
-    private func makeSession(workingDirectory: String? = nil,
+    private func makeSession(id: SessionRecord.ID = UUID(),
+                             workingDirectory: String? = nil,
                              workspaceID: WorkspaceFolder.ID? = nil) -> SessionRecord {
         // Monotonic sequence so numbers never repeat, even after a terminal is
         // closed — `sessions.count` would reuse a number and collide.
         sessionSequence += 1
-        return SessionRecord.shell(title: "Terminal \(sessionSequence)",
+        return SessionRecord.shell(id: id,
+                                   title: "Terminal \(sessionSequence)",
                                    workingDirectory: workingDirectory ?? FileManager.default.homeDirectoryForCurrentUser.path,
                                    workspaceID: workspaceID)
     }

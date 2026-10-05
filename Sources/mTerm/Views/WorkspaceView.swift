@@ -1023,6 +1023,7 @@ private struct TerminalPane: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var terminalProcesses: TerminalProcessRegistry
+    @EnvironmentObject private var remoteControl: RemoteControl
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
@@ -1040,6 +1041,7 @@ private struct TerminalPane: View {
                                  isVisible: isVisible,
                                  isFocused: session.id == workspace.selectedSessionID,
                                  searchController: searchController,
+                                 remoteControl: remoteControl,
                                  isFindBarOpen: workspace.findSessionID == session.id,
                                  fontName: settings.terminalFontName,
                                  fontSize: settings.terminalFontSize,
@@ -1095,6 +1097,14 @@ private struct TerminalPane: View {
                             }
                             .padding(.top, 8)
                             .padding(.trailing, 14)
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if let driver = remoteControl.remoteDrivers[session.id] {
+                            RemoteDriverBanner(deviceName: driver) {
+                                remoteControl.reclaim(session.id)
+                            }
+                            .padding(.bottom, 14)
                         }
                     }
             }

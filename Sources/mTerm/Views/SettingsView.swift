@@ -14,6 +14,8 @@ struct SettingsView: View {
                 .tabItem { Label("Typography", systemImage: "textformat") }
             ansiColors
                 .tabItem { Label("ANSI Colors", systemImage: "paintpalette") }
+            RemoteSettingsView()
+                .tabItem { Label("Remote", systemImage: "ipad.landscape") }
         }
         .padding(20)
         .frame(width: 540, height: 560)
