@@ -234,6 +234,10 @@ so reflow stays disabled there regardless.
 Sidebar session rows resolve single-click, Command-click, and double-click from
 one tap handler. Do not install competing single/double SwiftUI tap gestures:
 that defers every pane switch until macOS's double-click interval expires.
+Clicking inside a pane's terminal selects that pane from
+`FileDroppableTerminalView.mouseDown` (`TerminalHostView.onSelect`), not a
+SwiftUI `.onTapGesture`: the gesture could miss a click that AppKit still made
+first responder, so typing went to one pane while the highlight stayed on another.
 `TerminalHostView.updateNSView` also applies changed font and ANSI settings to
 that same persistent view. It caches the last applied values in its coordinator
 so unrelated SwiftUI updates do not repeatedly reset fonts, palettes, or PTY size.

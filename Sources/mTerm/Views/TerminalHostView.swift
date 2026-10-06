@@ -45,9 +45,11 @@ struct TerminalHostView: NSViewRepresentable {
     var onRestorationLaunched: () -> Void = {}
     /// Reports the authoritative UUID emitted by Claude's SessionStart hook.
     var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
-    /// Selects the owning pane when Finder drops one or more files directly on
-    /// its AppKit-backed terminal view.
-    var onFileDrop: () -> Void = {}
+    /// Selects the owning pane when the user clicks its AppKit-backed terminal
+    /// view or Finder drops files on it. Clicks are routed from `mouseDown`
+    /// because a SwiftUI tap gesture can miss a click that AppKit still turns
+    /// into first responder, leaving keyboard focus and the highlight split.
+    var onSelect: () -> Void = {}
     /// Registers the PTY shell with app-owned lifecycle cleanup.
     var onProcessStarted: (pid_t) -> Void = { _ in }
     /// Cleans up any remaining process in this terminal's Unix session.
@@ -95,13 +97,16 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onRestorationLaunched = onRestorationLaunched
         context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
-        context.coordinator.onFileDrop = onFileDrop
+        context.coordinator.onSelect = onSelect
         context.coordinator.onProcessTeardown = onProcessTeardown
         terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
             DispatchQueue.main.async {
                 guard let coordinator, let terminal else { return }
                 coordinator.receiveDroppedFiles(urls, in: terminal)
             }
+        }
+        terminal.onMouseDown = { [weak coordinator = context.coordinator] in
+            coordinator?.onSelect()
         }
         terminal.onImagePaste = { [weak coordinator = context.coordinator, weak terminal] pasteboard in
             guard let coordinator, let terminal else { return false }
@@ -300,7 +305,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onRestorationLaunched = onRestorationLaunched
         context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
-        context.coordinator.onFileDrop = onFileDrop
+        context.coordinator.onSelect = onSelect
         context.coordinator.onProcessTeardown = onProcessTeardown
         if context.coordinator.appliedFontName != fontName
             || context.coordinator.appliedFontSize != fontSize {
@@ -386,7 +391,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onAgentWorkInterrupted: () -> Void = {}
         var onRestorationLaunched: () -> Void = {}
         var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
-        var onFileDrop: () -> Void = {}
+        var onSelect: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
         /// OMP animates its working separator every 80 ms. Keep the last parsed
@@ -446,7 +451,7 @@ struct TerminalHostView: NSViewRepresentable {
             in terminal: LocalProcessTerminalView
         ) {
             guard !urls.isEmpty else { return }
-            onFileDrop()
+            onSelect()
             terminal.window?.makeFirstResponder(terminal)
             for chunk in TerminalFileDrop.terminalInputChunks(
                 for: urls,
@@ -628,6 +633,8 @@ enum TerminalKeyboardInput {
 final class FileDroppableTerminalView: LocalProcessTerminalView {
     var onFileDrop: ([URL]) -> Void = { _ in }
     var onImagePaste: (NSPasteboard) -> Bool = { _ in false }
+    /// Called on every local mouse-down before SwiftTerm handles the click.
+    var onMouseDown: () -> Void = {}
     /// Receives every PTY output chunk after the local emulator consumed it,
     /// so a snapshot taken between chunks never misses or repeats bytes.
     var onOutput: (ArraySlice<UInt8>) -> Void = { _ in }
@@ -767,6 +774,7 @@ final class FileDroppableTerminalView: LocalProcessTerminalView {
 
     override func mouseDown(with event: NSEvent) {
         noteLocalInteraction()
+        onMouseDown()
         super.mouseDown(with: event)
     }
 

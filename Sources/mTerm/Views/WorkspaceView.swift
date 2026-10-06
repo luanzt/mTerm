@@ -1078,7 +1078,7 @@ private struct TerminalPane: View {
                                          session.id,
                                          sessionID: $0)
                                  },
-                                 onFileDrop: {
+                                 onSelect: {
                                      workspace.selectedSessionID = session.id
                                  },
                                  onProcessStarted: {
@@ -1087,7 +1087,6 @@ private struct TerminalPane: View {
                                  onProcessTeardown: {
                                      terminalProcesses.terminate(session.id)
                                  })
-                    .onTapGesture { workspace.selectedSessionID = session.id }
                     .padding(10)
                     .overlay(alignment: .topTrailing) {
                         if workspace.findSessionID == session.id {
