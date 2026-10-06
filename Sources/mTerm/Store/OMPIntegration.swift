@@ -1,11 +1,13 @@
 import Foundation
 
 /// OMP reports its interactive lifecycle through OSC 0 terminal titles. The
-/// leading `π` scopes the protocol; the separator carries run state and the
-/// remaining text is OMP's persisted session title.
+/// leading `π` scopes the protocol; the separator carries run state (a spinner
+/// while working, `>` on the user's turn, `!` while an ask or approval prompt
+/// waits on the user) and the remaining text is OMP's persisted session title.
 enum OMPIntegration {
     struct TerminalTitleUpdate: Equatable {
         let isWorking: Bool
+        var isAwaitingUser = false
         let conversationTitle: String?
     }
 
@@ -36,6 +38,7 @@ enum OMPIntegration {
         guard remainder.isEmpty || remainder.first == " " else { return nil }
         return TerminalTitleUpdate(
             isWorking: isWorking,
+            isAwaitingUser: separator == "!",
             conversationTitle: normalizedTitle(remainder.dropFirst(remainder.isEmpty ? 0 : 1)))
     }
 

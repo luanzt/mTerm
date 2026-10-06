@@ -63,6 +63,9 @@ final class WorkspaceStore: ObservableObject {
     /// hooks plus Codex and OMP terminal-title run states drive this state;
     /// attention, interruption, and foreground exit provide clear boundaries.
     @Published private(set) var agentWorkingSessionIDs: Set<SessionRecord.ID> = []
+    /// OMP sessions whose ask or approval prompt waits on the user, from the
+    /// `!` terminal-title run state.
+    @Published private(set) var agentAwaitingSessionIDs: Set<SessionRecord.ID> = []
     /// Validated OSC 0/2 titles emitted by active Claude, Codex, or OMP processes.
     /// Kept separately so each session's stable "Terminal N" title is restored
     /// when shell integration reports that the pane is idle again.
@@ -351,6 +354,7 @@ final class WorkspaceStore: ObservableObject {
         codexSessionIDs.remove(session.id)
         ompSessionIDs.remove(session.id)
         agentWorkingSessionIDs.remove(session.id)
+        agentAwaitingSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
         agentResumeDescriptors.removeValue(forKey: session.id)
@@ -470,6 +474,7 @@ final class WorkspaceStore: ObservableObject {
         // Starting an interactive agent does not imply it already has a prompt
         // to process. Submission is reported separately from TerminalHostView.
         agentWorkingSessionIDs.remove(id)
+        agentAwaitingSessionIDs.remove(id)
         updateAgentRestorationState(for: id, foregroundCommand: command)
     }
 
@@ -507,6 +512,13 @@ final class WorkspaceStore: ObservableObject {
                 }
             } else if agentWorkingSessionIDs.contains(id) {
                 agentWorkingSessionIDs.remove(id)
+            }
+            if update.isAwaitingUser != agentAwaitingSessionIDs.contains(id) {
+                if update.isAwaitingUser {
+                    agentAwaitingSessionIDs.insert(id)
+                } else {
+                    agentAwaitingSessionIDs.remove(id)
+                }
             }
             guard let conversationTitle = update.conversationTitle else { return }
             scopedTitle = conversationTitle

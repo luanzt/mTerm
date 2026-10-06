@@ -1,12 +1,12 @@
 import Foundation
 
-/// The `/` menu a remote client offers for a session: the agent's built-in
-/// commands, then every skill the agent loads for the session's working
-/// directory. OMP lists its own skills (`omp skill list --json`, run in that
-/// directory), so user, managed, plugin, and project sources match its TUI.
-/// Claude Code has no listing command, so its skill and command folders are
-/// scanned the way it loads them: project folders from the working directory
-/// up, the user folder, then enabled plugins.
+/// The `/` menu a remote client offers for a session. OMP reports its whole
+/// menu itself (`get_available_commands` over `omp --mode rpc`, run in the
+/// session's working directory): built-ins, skills, extension, custom, MCP
+/// prompt, and file commands, exactly as its TUI lists them. Claude Code has
+/// no listing command, so its skill and command folders are scanned the way
+/// it loads them: project folders from the working directory up, the user
+/// folder, then enabled plugins.
 enum RemoteCommandCatalog {
     static func load(agent: RemoteAgent?, workingDirectory: String) async -> [RemoteCommand] {
         guard let agent else { return [] }
@@ -18,7 +18,7 @@ enum RemoteCommandCatalog {
         }
         switch agent {
         case .omp:
-            return builtins(for: .omp) + (await ompSkills(in: directory, home: home))
+            return await ompCommands(in: directory, home: home)
         case .claude:
             return builtins(for: .claude) + claudeEntries(workingDirectory: directory, home: home)
         case .codex:
@@ -28,11 +28,14 @@ enum RemoteCommandCatalog {
 
     // MARK: - Built-in commands
 
-    /// Curated after Orca's `native-chat-slash-commands.ts`; the CLIs ship no
-    /// machine-readable list of their built-ins.
+    /// Curated after Orca's `native-chat-slash-commands.ts`; Claude Code and
+    /// Codex ship no machine-readable list of their built-ins.
     static func builtins(for agent: RemoteAgent) -> [RemoteCommand] {
         let pairs: [(String, String)]
         switch agent {
+        case .omp:
+            // OMP lists its own built-ins with the rest (`ompCommands`).
+            return []
         case .claude:
             pairs = [
                 ("clear", "Clear conversation history"),
@@ -89,39 +92,18 @@ enum RemoteCommandCatalog {
                 ("personality", "Choose a communication style"),
                 ("subagents", "Switch the active agent thread"),
             ]
-        case .omp:
-            pairs = [
-                ("model", "Open the model selector"),
-                ("switch", "Open the temporary model selector"),
-                ("plan", "Toggle plan mode"),
-                ("compact", "Compact conversation context"),
-                ("clear", "Clear context while keeping the session"),
-                ("new", "Start a new session"),
-                ("resume", "Resume a session; without arguments, choose one"),
-                ("fork", "Fork from a previous message"),
-                ("branch", "Rewind to a previous message"),
-                ("tree", "Browse the session tree"),
-                ("session", "Show session information and controls"),
-                ("rename", "Rename the session"),
-                ("context", "Show estimated context usage"),
-                ("usage", "Show provider usage and limits"),
-                ("fast", "Toggle priority service tier"),
-                ("tools", "Show tools visible to the agent"),
-                ("jobs", "Show background jobs"),
-                ("git", "Open the Git viewer"),
-                ("export", "Export the session to HTML"),
-                ("settings", "Open settings"),
-                ("extensions", "Open the extension dashboard"),
-                ("hotkeys", "Show keyboard shortcuts"),
-            ]
         }
         return pairs.map { RemoteCommand(name: $0.0, description: $0.1, kind: .command, source: "Built-in") }
     }
 
     // MARK: - OMP
 
-    private static func ompSkills(in directory: URL, home: URL) async -> [RemoteCommand] {
-        let arguments = ["skill", "list", "--json"]
+    static let ompRequestID = "mterm-commands"
+
+    private static func ompCommands(in directory: URL, home: URL) async -> [RemoteCommand] {
+        let arguments = ["--mode", "rpc", "--no-session", "--no-title"]
+        // OMP answers, then exits when its input closes.
+        let request = Data("{\"id\":\"\(ompRequestID)\",\"type\":\"get_available_commands\"}\n".utf8)
         // A GUI app's PATH lacks the user's tool folders, and `omp` is a Bun
         // script (`#!/usr/bin/env bun`), so its folder must be on PATH too.
         let toolFolders = [
@@ -134,61 +116,72 @@ enum RemoteCommandCatalog {
         if let omp = toolFolders.lazy
             .map({ URL(fileURLWithPath: $0).appendingPathComponent("omp") })
             .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }),
-           let data = await run(omp, arguments, in: directory, environment: environment) {
-            return ompSkills(fromJSON: data)
+           let data = await run(omp, arguments, input: request, in: directory, environment: environment) {
+            return ompCommands(fromRPC: data)
         }
         // Anywhere else, only the user's interactive shell knows where omp is.
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         guard let data = await run(
             URL(fileURLWithPath: shell),
             ["-l", "-i", "-c", "exec omp " + arguments.joined(separator: " ")],
+            input: request,
             in: directory,
             environment: ProcessInfo.processInfo.environment) else { return [] }
-        return ompSkills(fromJSON: data)
+        return ompCommands(fromRPC: data)
     }
 
-    /// Parses `omp skill list --json`. Shell startup files may print around
-    /// the JSON object, so only the outermost braces are decoded.
-    static func ompSkills(fromJSON data: Data) -> [RemoteCommand] {
-        struct Listing: Decodable {
-            struct Skill: Decodable {
+    /// Picks the `get_available_commands` response out of OMP's RPC output,
+    /// one JSON object per line among events and any shell startup noise.
+    static func ompCommands(fromRPC data: Data) -> [RemoteCommand] {
+        struct Response: Decodable {
+            struct Payload: Decodable {
+                let commands: [Command]
+            }
+            struct Command: Decodable {
+                struct Input: Decodable {
+                    let hint: String
+                }
                 let name: String
                 let description: String?
-                let source: String?
+                let input: Input?
+                let source: String
             }
-            let skills: [Skill]
+            let type: String
+            let id: String?
+            let data: Payload?
         }
-        guard let start = data.firstIndex(of: UInt8(ascii: "{")),
-              let end = data.lastIndex(of: UInt8(ascii: "}")), start < end,
-              let listing = try? JSONDecoder().decode(Listing.self, from: data[start...end]) else { return [] }
-        return listing.skills.map { skill in
-            RemoteCommand(
-                name: "skill:\(skill.name)",
-                description: collapsed(skill.description ?? ""),
-                kind: .skill,
-                source: ompSourceLabel(skill.source ?? ""))
+        for line in data.split(separator: UInt8(ascii: "\n")) {
+            guard let response = try? JSONDecoder().decode(Response.self, from: Data(line)),
+                  response.type == "response", response.id == ompRequestID, let payload = response.data
+            else { continue }
+            return payload.commands.map { command in
+                RemoteCommand(
+                    name: command.name,
+                    description: collapsed(command.description ?? ""),
+                    kind: command.source == "skill" ? .skill : .command,
+                    source: ompSourceLabel(command.source),
+                    hint: command.input.map { collapsed($0.hint) }.flatMap { $0.isEmpty ? nil : $0 })
+            }
         }
+        return []
     }
 
-    /// `provider:level` (`native:user`, `claude:project`, `omp-managed:user`).
     private static func ompSourceLabel(_ source: String) -> String {
-        let parts = source.split(separator: ":", maxSplits: 1).map(String.init)
-        if parts.count == 2, parts[1] == "project" { return "Project" }
-        switch parts.first ?? "" {
-        case "native": return "User"
-        case "omp-managed": return "Managed"
-        case "claude": return "Claude"
-        case "claude-plugins": return "Claude plugin"
-        case "agents": return "Agents"
-        case "codex": return "Codex"
-        case "": return "User"
-        case let provider: return provider
+        switch source {
+        case "builtin": "Built-in"
+        case "skill": "Skill"
+        case "extension": "Extension"
+        case "custom": "Custom"
+        case "mcp_prompt": "MCP"
+        case "file": "Command"
+        default: source
         }
     }
 
     private static func run(
         _ executable: URL,
         _ arguments: [String],
+        input: Data,
         in directory: URL,
         environment: [String: String]
     ) async -> Data? {
@@ -200,9 +193,15 @@ enum RemoteCommandCatalog {
                 process.currentDirectoryURL = directory
                 process.environment = environment
                 let output = Pipe()
+                let stdin = Pipe()
                 process.standardOutput = output
                 process.standardError = FileHandle.nullDevice
-                process.standardInput = FileHandle.nullDevice
+                process.standardInput = stdin
+                // Written while this side still holds the read end, so a child
+                // that dies at once cannot raise SIGPIPE here. The input is far
+                // below the pipe buffer.
+                try? stdin.fileHandleForWriting.write(contentsOf: input)
+                try? stdin.fileHandleForWriting.close()
                 do {
                     try process.run()
                 } catch {

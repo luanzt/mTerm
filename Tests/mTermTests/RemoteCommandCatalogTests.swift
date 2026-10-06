@@ -49,26 +49,33 @@ final class RemoteCommandCatalogTests: XCTestCase {
 
     // MARK: OMP
 
-    func testOMPListingSkipsShellNoiseAndPrefixesSkillNames() {
-        let output = """
-            Last login: Mon
-            {"skills":[
-              {"name":"writing-plans","description":"Plan\\n  multi-step work","source":"native:user"},
-              {"name":"pr-review","description":"Review PRs","source":"claude:project"},
-              {"name":"superpowers/brainstorming","source":"claude-plugins:user"}
-            ],"warnings":[]}
-            """
-        let skills = RemoteCommandCatalog.ompSkills(fromJSON: Data(output.utf8))
-        XCTAssertEqual(skills, [
-            RemoteCommand(name: "skill:writing-plans", description: "Plan multi-step work", kind: .skill, source: "User"),
-            RemoteCommand(name: "skill:pr-review", description: "Review PRs", kind: .skill, source: "Project"),
-            RemoteCommand(name: "skill:superpowers/brainstorming", description: "", kind: .skill,
-                          source: "Claude plugin"),
+    func testOMPMenuComesFromTheRPCResponseAmongEventsAndShellNoise() {
+        let commands = [
+            #"{"name":"fast","description":"Toggle fast mode","input":{"hint":"[on|ultra|off|status]"},"source":"builtin"}"#,
+            #"{"name":"skill:writing-plans","description":"Plan\n  multi-step work","source":"skill"}"#,
+            #"{"name":"codex:review","description":"Review with Codex","source":"file"}"#,
+            #"{"name":"autoresearch","source":"extension"}"#,
+        ].joined(separator: ",")
+        let output = [
+            "Last login: Mon",
+            #"{"type":"ready"}"#,
+            #"{"type":"response","id":"other","data":{"commands":[{"name":"stale","source":"builtin"}]}}"#,
+            #"{"type":"available_commands_update"}"#,
+            #"{"type":"response","command":"get_available_commands","id":"mterm-commands","data":{"commands":["#
+                + commands + "]}}",
+        ].joined(separator: "\n")
+        XCTAssertEqual(RemoteCommandCatalog.ompCommands(fromRPC: Data(output.utf8)), [
+            RemoteCommand(name: "fast", description: "Toggle fast mode", kind: .command, source: "Built-in",
+                          hint: "[on|ultra|off|status]"),
+            RemoteCommand(name: "skill:writing-plans", description: "Plan multi-step work", kind: .skill,
+                          source: "Skill"),
+            RemoteCommand(name: "codex:review", description: "Review with Codex", kind: .command, source: "Command"),
+            RemoteCommand(name: "autoresearch", description: "", kind: .command, source: "Extension"),
         ])
     }
 
-    func testOMPListingThatIsNotJSONYieldsNothing() {
-        XCTAssertEqual(RemoteCommandCatalog.ompSkills(fromJSON: Data("command not found: omp".utf8)), [])
+    func testOMPOutputWithoutTheResponseYieldsNothing() {
+        XCTAssertEqual(RemoteCommandCatalog.ompCommands(fromRPC: Data("command not found: omp".utf8)), [])
     }
 
     // MARK: Claude Code

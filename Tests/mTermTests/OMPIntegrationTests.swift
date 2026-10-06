@@ -12,13 +12,17 @@ final class OMPIntegrationTests: XCTestCase {
 
         for title in [
             "π > Fix authentication flow",
-            "π ! Fix authentication flow",
             "π: Fix authentication flow",
         ] {
             XCTAssertEqual(
                 OMPIntegration.parseTerminalTitle(title),
                 .init(isWorking: false, conversationTitle: "Fix authentication flow"))
         }
+
+        // `!`: an ask or approval prompt is waiting on the user.
+        XCTAssertEqual(
+            OMPIntegration.parseTerminalTitle("π ! Fix authentication flow"),
+            .init(isWorking: false, isAwaitingUser: true, conversationTitle: "Fix authentication flow"))
     }
 
     func testAllowsRunStateWithoutConversationTitle() {

@@ -122,6 +122,9 @@ public struct RemoteSession: Codable, Hashable, Identifiable, Sendable {
     public let agent: RemoteAgent?
     public let isWorking: Bool
     public let isExited: Bool
+    /// The agent is waiting on the user: an OMP ask or approval prompt. Read
+    /// as false when absent, so either side may predate it.
+    public let isAwaitingInput: Bool
 
     public init(
         id: UUID,
@@ -130,7 +133,8 @@ public struct RemoteSession: Codable, Hashable, Identifiable, Sendable {
         workingDirectory: String,
         agent: RemoteAgent?,
         isWorking: Bool,
-        isExited: Bool
+        isExited: Bool,
+        isAwaitingInput: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -139,6 +143,23 @@ public struct RemoteSession: Codable, Hashable, Identifiable, Sendable {
         self.agent = agent
         self.isWorking = isWorking
         self.isExited = isExited
+        self.isAwaitingInput = isAwaitingInput
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, workspaceID, workingDirectory, agent, isWorking, isExited, isAwaitingInput
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        workspaceID = try container.decodeIfPresent(UUID.self, forKey: .workspaceID)
+        workingDirectory = try container.decode(String.self, forKey: .workingDirectory)
+        agent = try container.decodeIfPresent(RemoteAgent.self, forKey: .agent)
+        isWorking = try container.decode(Bool.self, forKey: .isWorking)
+        isExited = try container.decode(Bool.self, forKey: .isExited)
+        isAwaitingInput = try container.decodeIfPresent(Bool.self, forKey: .isAwaitingInput) ?? false
     }
 }
 
@@ -157,12 +178,16 @@ public struct RemoteCommand: Codable, Hashable, Sendable {
     public let kind: Kind
     /// Where it was found, for display: "Built-in", "Project", "User", a plugin.
     public let source: String
+    /// Its arguments, as the agent shows them: `[on|off|status]`. Optional on
+    /// the wire, so either side may predate it.
+    public let hint: String?
 
-    public init(name: String, description: String, kind: Kind, source: String) {
+    public init(name: String, description: String, kind: Kind, source: String, hint: String? = nil) {
         self.name = name
         self.description = description
         self.kind = kind
         self.source = source
+        self.hint = hint
     }
 }
 

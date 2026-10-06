@@ -372,7 +372,9 @@ may also resume work without a new top-level prompt. Codex activity must come on
 from the TUI-owned `run-state` title: `Starting`/`Working`/`Thinking`/`Waiting`
 set working and `Ready` clears it. OMP's native `tui.titleState` OSC title owns
 its state: `π <braille-frame> <session>` is working, `π > <session>` is idle, and
-`π ! <session>` needs user attention. Spinner-frame-only OMP title updates are
+`π ! <session>` needs user attention (an `ask` or approval prompt); that last
+state is kept in `agentAwaitingSessionIDs` and sent to the iPad as
+`RemoteSession.isAwaitingInput`, which hides the composer's `/` menu. Spinner-frame-only OMP title updates are
 deduplicated before reaching SwiftUI. Never infer Codex or OMP activity from
 Return; slash commands, menus, approvals, and local interactions make keyboard
 inference asymmetric and can strand a spinner. Codex OSC 9 remains an attention
@@ -466,22 +468,26 @@ only host of shells; the iPad runs its own SwiftTerm emulator and UI.
 - The Mac emulator answers terminal queries; the iPad mirror drops its own
   replies. Remote input is written with `process.send`, bypassing the Mac view.
 - **`/` menu:** a client's `commands` request is answered by
-  `RemoteCommandCatalog` for the session's agent and working directory:
-  curated built-ins, then skills. OMP skills come from `omp skill list --json`
-  run in that directory (`~/.bun/bin`, Homebrew, `/usr/local/bin`, else the
-  user's interactive login shell), named `skill:<name>`. Claude Code skills and
-  commands are scanned from project `.claude/` folders (working directory up to
-  home), `~/.claude/`, and plugins enabled in `enabledPlugins`
-  (`<plugin>:<name>`). The iPad composer sends prompts itself (paste, Enter
-  pacing per agent); the host still only writes input bytes.
+  `RemoteCommandCatalog` for the session's agent and working directory. OMP
+  reports its whole menu (built-ins, skills, extension, custom, MCP prompt, and
+  file commands, as its TUI lists them) through `get_available_commands` on
+  `omp --mode rpc --no-session --no-title`, run in that directory (`~/.bun/bin`,
+  Homebrew, `/usr/local/bin`, else the user's interactive login shell); the
+  request is the process's whole stdin, so OMP exits after answering. Claude
+  Code gets curated built-ins plus skills and commands scanned from project
+  `.claude/` folders (working directory up to home), `~/.claude/`, and plugins
+  enabled in `enabledPlugins` (`<plugin>:<name>`). The iPad composer sends
+  prompts itself (paste, Enter pacing per agent); the host still only writes
+  input bytes.
 - **Attachments:** an `upload` frame (≤ `RemoteProtocol.maxUploadBytes`, 20 MB)
   is saved by `RemoteAttachmentStore` to
   `~/Library/Caches/mTerm/RemoteAttachments/<upload id>/<safe name>` and
   answered with `uploaded` (path) or `uploadFailed`. Names are reduced to
   ASCII `[A-Za-z0-9._-]` so prompts carry paths unquoted. Starting the server
-  removes uploads older than seven days. The iPad sends Claude/Codex images
-  as pasted paths (they become image attachments) and everything else as
-  `@path` mentions, after Orca's `agent-image-paste.ts`.
+  removes uploads older than seven days. The iPad keeps each attachment where
+  the user put it in the prompt: an image path is pasted alone at that point
+  (OMP, Claude, and Codex turn it into `[Image #N]`), any other file is an
+  inline `@path` mention.
 
 ### Theme
 

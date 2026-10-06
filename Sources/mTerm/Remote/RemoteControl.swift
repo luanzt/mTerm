@@ -310,7 +310,8 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
                 workingDirectory: session.workingDirectory,
                 agent: agent,
                 isWorking: workspace.agentWorkingSessionIDs.contains(session.id),
-                isExited: session.status == .exited)
+                isExited: session.status == .exited,
+                isAwaitingInput: workspace.agentAwaitingSessionIDs.contains(session.id))
         }
         return (workspaces, sessions)
     }
