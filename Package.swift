@@ -10,12 +10,13 @@ let package = Package(
     dependencies: [
         // Fork of SwiftTerm with reflow made per-terminal configurable (off for
         // shell prompts, on for foreground programs), deferrable child PTY
-        // resizes, configurable foreground/highlight colors for OSC 8 links, and
-        // manual selections that survive output while mouse tracking is off.
+        // resizes, configurable foreground/highlight colors for OSC 8 links,
+        // manual selections that survive output while mouse tracking is off,
+        // and a saved cursor that survives lowering the scrollback limit.
         // The pinned revision is the tip of the fork's `mterm` branch. See the
         // dependency notes in CLAUDE.md before updating it.
         .package(url: "https://github.com/luanzt/SwiftTerm.git",
-                 revision: "79c8ac26a0fc579e744d5025223ac58859587679"),
+                 revision: "0dea75d0e94133b5055b807da662da7afbb655b1"),
         .package(url: "https://github.com/sparkle-project/Sparkle",
                  exact: "2.9.4"),
     ],

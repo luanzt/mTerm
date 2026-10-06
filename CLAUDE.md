@@ -130,6 +130,8 @@ and `MTermTheme.ansiPalette`. Font and palette updates must be applied to the
 existing SwiftTerm views rather than recreating them or their shell processes.
 The sidebar width defaults to 250 pt, is clamped to 180–420 pt, persists, and can
 be changed either in Settings or by dragging its trailing divider without animation.
+Terminal scrollback (`scrollbackLines`) defaults to 3,000 lines, is clamped to
+500–10,000, persists, and falls back to the default for invalid stored values.
 
 ### Layout model: `PaneGrid` (Models/PaneGrid.swift)
 
@@ -238,9 +240,13 @@ Clicking inside a pane's terminal selects that pane from
 `FileDroppableTerminalView.mouseDown` (`TerminalHostView.onSelect`), not a
 SwiftUI `.onTapGesture`: the gesture could miss a click that AppKit still made
 first responder, so typing went to one pane while the highlight stayed on another.
-`TerminalHostView.updateNSView` also applies changed font and ANSI settings to
-that same persistent view. It caches the last applied values in its coordinator
-so unrelated SwiftUI updates do not repeatedly reset fonts, palettes, or PTY size.
+`TerminalHostView.updateNSView` also applies changed font, ANSI, and scrollback
+settings to that same persistent view. It caches the last applied values in its
+coordinator so unrelated SwiftUI updates do not repeatedly reset fonts, palettes,
+scrollback, or PTY size. Scrollback is set in `makeNSView` before the shell starts
+(replacing SwiftTerm's 500-line default); lowering it later trims the oldest
+normal-buffer history in every open pane, hidden ones included. It never resizes
+the PTY.
 The standalone SwiftTerm `NSScroller` is hidden to remove the trailing gray bar;
 scrollback remains enabled through SwiftTerm's direct wheel/trackpad handling.
 `TerminalProcessRegistry` records each PTY shell's Unix session ID. Closing a
@@ -526,6 +532,10 @@ these mTerm-specific changes:
   tracking enabled (`allowMouseReporting && mouseMode != .off`). Upstream clears
   it on every output chunk whenever `allowMouseReporting` is true (the default),
   so an agent spinner or status-line repaint dismissed a selection mid-drag.
+- `Buffer.changeHistorySize` leaves `savedY` alone when trimming. Upstream
+  subtracts the trimmed line count, but the saved cursor is screen-relative, so
+  lowering scrollback while vim/less/htop held the alternate screen restored the
+  shell cursor to row 0 on exit.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
 these changes on top of upstream. (`edev-no-reflow` is the working branch these
