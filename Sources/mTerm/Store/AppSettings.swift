@@ -38,6 +38,8 @@ final class AppSettings: ObservableObject {
     static let terminalFontSizeRange = 9.0...28.0
     static let sidebarFontSizeRange = 10.0...18.0
     static let sidebarWidthRange = 180.0...420.0
+    static let defaultScrollbackLines = 3_000
+    static let scrollbackLinesRange = 500...10_000
 
     private enum Key {
         static let terminalFontName = "mterm.settings.terminalFontName"
@@ -48,6 +50,7 @@ final class AppSettings: ObservableObject {
         static let newTerminalPlacement = "mterm.settings.newTerminalPlacement"
         static let quitBehavior = "mterm.settings.quitBehavior"
         static let themeID = "mterm.settings.themeID"
+        static let scrollbackLines = "mterm.settings.scrollbackLines"
     }
 
     private let defaults: UserDefaults
@@ -88,6 +91,19 @@ final class AppSettings: ObservableObject {
                 sidebarWidth = clamped
             } else {
                 defaults.set(sidebarWidth, forKey: Key.sidebarWidth)
+            }
+        }
+    }
+
+    /// Lines of normal-buffer history each terminal pane keeps.
+    @Published var scrollbackLines: Int {
+        didSet {
+            let clamped = min(max(scrollbackLines, Self.scrollbackLinesRange.lowerBound),
+                              Self.scrollbackLinesRange.upperBound)
+            if clamped != scrollbackLines {
+                scrollbackLines = clamped
+            } else {
+                defaults.set(scrollbackLines, forKey: Key.scrollbackLines)
             }
         }
     }
@@ -135,6 +151,10 @@ final class AppSettings: ObservableObject {
             defaults.object(forKey: Key.sidebarWidth),
             fallback: Self.defaultSidebarWidth,
             range: Self.sidebarWidthRange)
+        let storedScrollback = (defaults.object(forKey: Key.scrollbackLines) as? NSNumber)?.intValue
+        scrollbackLines = storedScrollback.flatMap {
+            Self.scrollbackLinesRange.contains($0) ? $0 : nil
+        } ?? Self.defaultScrollbackLines
 
         let storedPalette = defaults.array(forKey: Key.ansiColors) as? [NSNumber]
         if let storedPalette, storedPalette.count == 16 {

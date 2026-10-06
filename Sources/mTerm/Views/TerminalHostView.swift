@@ -13,6 +13,7 @@ struct TerminalHostView: NSViewRepresentable {
     let fontName: String
     let fontSize: Double
     let ansiColors: [UInt32]
+    let scrollbackLines: Int
     /// Drives the terminal's foreground/background/cursor colors from the
     /// active theme. Passed in (rather than read statically) so SwiftUI re-runs
     /// updateNSView when the user switches theme.
@@ -77,6 +78,7 @@ struct TerminalHostView: NSViewRepresentable {
         // SwiftTerm's default ANSI palette is muted; install our vibrant palette
         // so output isn't washed out. (Colors live in MTermTheme.)
         terminal.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
+        terminal.changeScrollback(scrollbackLines)
         terminal.linkHighlightMode = .hoverWithModifier
         context.coordinator.terminal = terminal
         searchController.terminalView = terminal
@@ -91,6 +93,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.appliedFontSize = fontSize
         context.coordinator.appliedThemeID = themeID
         context.coordinator.appliedANSIColors = ansiColors
+        context.coordinator.appliedScrollbackLines = scrollbackLines
         context.coordinator.onTerminalTitle = onTitleChange
         context.coordinator.onWorkingDirectoryChange = onWorkingDirectoryChange
         context.coordinator.onAgentInputSubmitted = onAgentInputSubmitted
@@ -318,6 +321,10 @@ struct TerminalHostView: NSViewRepresentable {
             nsView.installColors(ansiColors.map { SwiftTerm.Color(hex: $0) })
             context.coordinator.appliedANSIColors = ansiColors
         }
+        if context.coordinator.appliedScrollbackLines != scrollbackLines {
+            nsView.changeScrollback(scrollbackLines)
+            context.coordinator.appliedScrollbackLines = scrollbackLines
+        }
         if context.coordinator.appliedThemeID != themeID {
             Self.applyThemeColors(to: nsView)
             context.coordinator.appliedThemeID = themeID
@@ -383,6 +390,7 @@ struct TerminalHostView: NSViewRepresentable {
         var appliedFontName: String?
         var appliedFontSize: Double?
         var appliedANSIColors: [UInt32]?
+        var appliedScrollbackLines: Int?
         var appliedThemeID: MTermThemeID?
         var paneResizeObservers: [NSObjectProtocol] = []
         var onTerminalTitle: (String) -> Void = { _ in }

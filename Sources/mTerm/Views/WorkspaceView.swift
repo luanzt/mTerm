@@ -1046,6 +1046,7 @@ private struct TerminalPane: View {
                                  fontName: settings.terminalFontName,
                                  fontSize: settings.terminalFontSize,
                                  ansiColors: settings.ansiColors,
+                                 scrollbackLines: settings.scrollbackLines,
                                  themeID: settings.themeID,
                                  restorationIntent: workspace.restorationIntent(
                                      for: session.id),

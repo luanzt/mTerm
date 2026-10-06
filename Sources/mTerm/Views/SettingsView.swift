@@ -37,9 +37,25 @@ struct SettingsView: View {
                     .labelsHidden()
                     .frame(width: 180)
                 }
+
+                GridRow {
+                    Text("Scrollback lines")
+                    HStack(spacing: 6) {
+                        TextField("Scrollback lines", value: $settings.scrollbackLines, format: .number)
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                        Stepper(
+                            "Scrollback lines",
+                            value: $settings.scrollbackLines,
+                            in: AppSettings.scrollbackLinesRange,
+                            step: 500)
+                            .labelsHidden()
+                    }
+                }
             }
 
-            Text("Explicit split commands, including ⇧⌘N and ⇧⌘T, always open a split.")
+            Text("Explicit split commands, including ⇧⌘N and ⇧⌘T, always open a split. Scrollback applies to every pane (500–10,000 lines); lowering it drops the oldest history in open panes.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
 

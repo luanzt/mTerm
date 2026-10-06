@@ -15,6 +15,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.quitBehavior, .restorePanes)
         XCTAssertFalse(settings.opensNewTerminalsInSplit)
         XCTAssertEqual(settings.ansiColors, MTermTheme.ansiPalette)
+        XCTAssertEqual(settings.scrollbackLines, 3_000)
         XCTAssertNotNil(NSFont(name: settings.terminalFontName, size: 14))
     }
 
@@ -30,6 +31,7 @@ final class AppSettingsTests: XCTestCase {
         settings.newTerminalPlacement = .newSplit
         settings.quitBehavior = .startClean
         settings.setANSIColor(0x123456, at: 4)
+        settings.scrollbackLines = 7_500
 
         let reloaded = AppSettings(defaults: defaults)
         XCTAssertEqual(reloaded.terminalFontName, fontName)
@@ -40,6 +42,20 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.quitBehavior, .startClean)
         XCTAssertTrue(reloaded.opensNewTerminalsInSplit)
         XCTAssertEqual(reloaded.ansiColors[4], 0x123456)
+        XCTAssertEqual(reloaded.scrollbackLines, 7_500)
+    }
+
+    func testScrollbackLinesClampToSupportedRange() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let settings = AppSettings(defaults: defaults)
+
+        settings.scrollbackLines = 50_000
+        XCTAssertEqual(settings.scrollbackLines, 10_000)
+        XCTAssertEqual(AppSettings(defaults: defaults).scrollbackLines, 10_000)
+
+        settings.scrollbackLines = 10
+        XCTAssertEqual(settings.scrollbackLines, 500)
+        XCTAssertEqual(AppSettings(defaults: defaults).scrollbackLines, 500)
     }
 
     func testInvalidStoredValuesFallBackToDefaults() {
@@ -50,6 +66,7 @@ final class AppSettingsTests: XCTestCase {
         defaults.set([1, 2, 3], forKey: "mterm.settings.ansiColors")
         defaults.set("unsupported", forKey: "mterm.settings.newTerminalPlacement")
         defaults.set("unsupported", forKey: "mterm.settings.quitBehavior")
+        defaults.set(20_000, forKey: "mterm.settings.scrollbackLines")
 
         let settings = AppSettings(defaults: defaults)
 
@@ -59,6 +76,7 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(settings.ansiColors, MTermTheme.ansiPalette)
         XCTAssertEqual(settings.newTerminalPlacement, .currentPane)
         XCTAssertEqual(settings.quitBehavior, .restorePanes)
+        XCTAssertEqual(settings.scrollbackLines, AppSettings.defaultScrollbackLines)
     }
 
     func testResetRestoresDefaultPaletteAndTypography() {
