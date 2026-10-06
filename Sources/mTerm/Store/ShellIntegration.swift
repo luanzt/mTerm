@@ -36,7 +36,9 @@ enum ShellIntegration {
             return .idle
         case "run":
             guard fields.count >= 2 else { return nil }
-            let cmd = fields[1].trimmingCharacters(in: .whitespaces)
+            // The default APFS volume is case-insensitive, so `Omp` (an iPad
+            // composer capitalizes the first letter) still runs omp.
+            let cmd = fields[1].trimmingCharacters(in: .whitespaces).lowercased()
             return cmd.isEmpty ? .idle : .run(command: cmd)
         default:
             return nil

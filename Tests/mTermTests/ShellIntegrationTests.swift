@@ -11,6 +11,11 @@ final class ShellIntegrationTests: XCTestCase {
         XCTAssertEqual(ShellIntegration.parse(payload("run;git")), .run(command: "git"))
     }
 
+    func testParseRunCommandIgnoresCase() {
+        XCTAssertEqual(ShellIntegration.parse(payload("run;Omp")), .run(command: "omp"))
+        XCTAssertEqual(ShellIntegration.parse(payload("run;CLAUDE")), .run(command: "claude"))
+    }
+
     func testParseIdle() {
         XCTAssertEqual(ShellIntegration.parse(payload("idle")), .idle)
     }
