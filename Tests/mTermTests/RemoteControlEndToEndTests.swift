@@ -332,4 +332,89 @@ final class RemoteControlEndToEndTests: XCTestCase {
         client.connection.cancel()
         control.setEnabled(false)
     }
+
+    func testCommandsRequestAnswersWithTheSessionAgentsMenu() throws {
+        let port = UInt16.random(in: 40_000...49_000)
+        defaults.set(Int(port), forKey: "mterm.remote.port")
+        let keyStore = MemoryKeyStore()
+        let workspace = WorkspaceStore(defaults: defaults)
+        let session = try XCTUnwrap(workspace.sessions.first)
+        let control = RemoteControl(defaults: defaults, keyStore: keyStore)
+        control.attach(to: workspace)
+        control.setEnabled(true)
+        waitUntil("listener ready") { control.serverState == .ready(port: port) }
+
+        let client = TestClient(port: port, key: try XCTUnwrap(keyStore.key))
+        client.start()
+        client.send(.hello(name: "Test iPad", version: RemoteProtocol.version, clientID: UUID()))
+        waitUntil("welcome") { !client.messages.isEmpty }
+        func reply(for id: UUID) -> [RemoteCommand]? {
+            for case .commands(let replySession, let commands) in client.messages.reversed()
+            where replySession == id {
+                return commands
+            }
+            return nil
+        }
+
+        // A plain shell has no menu.
+        client.send(.commands(session: session.id))
+        waitUntil("shell reply") { reply(for: session.id) != nil }
+        XCTAssertEqual(reply(for: session.id), [])
+
+        workspace.setForeground(session.id, command: "claude")
+        client.messages.removeAll()
+        client.send(.commands(session: session.id))
+        waitUntil("Claude reply") { reply(for: session.id) != nil }
+        let commands = try XCTUnwrap(reply(for: session.id))
+        XCTAssertEqual(commands.prefix(5).map(\.name), ["clear", "compact", "init", "review", "help"])
+        XCTAssertTrue(commands.prefix(5).allSatisfy { $0.kind == .command && $0.source == "Built-in" })
+
+        let unknown = UUID()
+        client.send(.commands(session: unknown))
+        waitUntil("unknown session reply") { reply(for: unknown) != nil }
+        XCTAssertEqual(reply(for: unknown), [])
+
+        client.connection.cancel()
+        control.setEnabled(false)
+    }
+
+    func testUploadIsStoredOnTheMacAndAnsweredWithItsPath() throws {
+        let port = UInt16.random(in: 40_000...49_000)
+        defaults.set(Int(port), forKey: "mterm.remote.port")
+        let keyStore = MemoryKeyStore()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RemoteUpload-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = WorkspaceStore(defaults: defaults)
+        let session = try XCTUnwrap(workspace.sessions.first)
+        let control = RemoteControl(
+            defaults: defaults, keyStore: keyStore, attachments: RemoteAttachmentStore(root: root))
+        control.attach(to: workspace)
+        control.setEnabled(true)
+        waitUntil("listener ready") { control.serverState == .ready(port: port) }
+
+        let client = TestClient(port: port, key: try XCTUnwrap(keyStore.key))
+        client.start()
+        client.send(.hello(name: "Test iPad", version: RemoteProtocol.version, clientID: UUID()))
+        waitUntil("welcome") { !client.messages.isEmpty }
+
+        // Large enough to span many TLS records.
+        let bytes = Data((0..<3_000_000).map { UInt8($0 % 251) })
+        let id = UUID()
+        client.send(.upload(session: session.id, id: id, name: "Ảnh chụp.png", data: bytes))
+        var path: String?
+        waitUntil("upload reply") {
+            for case .uploaded(let replyID, let replyPath) in client.messages where replyID == id {
+                path = replyPath
+            }
+            return path != nil
+        }
+        let stored = try XCTUnwrap(path)
+        XCTAssertTrue(stored.hasPrefix(root.path))
+        XCTAssertTrue(stored.hasSuffix("/Anh-chup.png"))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: stored)), bytes)
+
+        client.connection.cancel()
+        control.setEnabled(false)
+    }
 }

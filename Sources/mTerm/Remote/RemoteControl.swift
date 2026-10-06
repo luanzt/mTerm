@@ -20,6 +20,7 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
     private let defaults: UserDefaults
     private let keyStore: RemoteKeyStorage
     private let server = RemoteServer()
+    private let attachments: RemoteAttachmentStore
     private var ownership = RemoteOwnership()
     private var terminals: [SessionRecord.ID: WeakTerminal] = [:]
     private var clients: [RemoteServer.ConnectionID: Client] = [:]
@@ -52,9 +53,14 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
         return (1...Int(UInt16.max)).contains(stored) ? UInt16(stored) : RemoteProtocol.defaultPort
     }
 
-    init(defaults: UserDefaults = .standard, keyStore: RemoteKeyStorage = RemoteKeyStore()) {
+    init(
+        defaults: UserDefaults = .standard,
+        keyStore: RemoteKeyStorage = RemoteKeyStore(),
+        attachments: RemoteAttachmentStore = RemoteAttachmentStore()
+    ) {
         self.defaults = defaults
         self.keyStore = keyStore
+        self.attachments = attachments
         isEnabled = defaults.bool(forKey: Self.enabledKey)
         server.delegate = self
     }
@@ -124,6 +130,8 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
         }
         server.start(port: port, key: key)
         refreshPairing()
+        let attachments = attachments
+        DispatchQueue.global(qos: .utility).async { attachments.removeExpired() }
     }
 
     /// Pane banner action: same as typing in the pane.
@@ -424,6 +432,32 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
             guard let view = terminal(for: session) else { return }
             apply(ownership.act(client: clientID, session: session), to: session)
             view.process.send(data: ArraySlice([UInt8](data)))
+        case .commands(let session):
+            guard let record = currentCatalog().sessions.first(where: { $0.id == session }) else {
+                server.send(.commands(session: session, commands: []), to: connection)
+                return
+            }
+            // Listing OMP skills runs `omp`, which takes most of a second.
+            Task { [weak self] in
+                let commands = await RemoteCommandCatalog.load(
+                    agent: record.agent, workingDirectory: record.workingDirectory)
+                guard let self, self.clients[connection] != nil else { return }
+                self.server.send(.commands(session: session, commands: commands), to: connection)
+            }
+        case .upload(_, let id, let name, let data):
+            let store = attachments
+            Task { [weak self] in
+                let result = await Task.detached(priority: .userInitiated) {
+                    Result { try store.save(data, named: name, id: id) }
+                }.value
+                guard let self, self.clients[connection] != nil else { return }
+                switch result {
+                case .success(let file):
+                    self.server.send(.uploaded(id: id, path: file.path), to: connection)
+                case .failure(let error):
+                    self.server.send(.uploadFailed(id: id, message: error.localizedDescription), to: connection)
+                }
+            }
         }
     }
 

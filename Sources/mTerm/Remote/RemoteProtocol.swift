@@ -14,6 +14,8 @@
 //   screen (host → client):  0x02 | session UUID (16) | columns u16 BE |
 //                            rows u16 BE | driver u8 | terminal bytes
 //   input  (client → host):  0x10 | session UUID (16) | keyboard bytes
+//   upload (client → host):  0x11 | session UUID (16) | upload UUID (16) |
+//                            name length u16 BE | name UTF-8 | file bytes
 //
 // A `screen` frame replaces the client's emulator state: reset, resize to the
 // carried grid, feed the bytes. Every geometry or driver change produces one,
@@ -25,7 +27,9 @@ import Network
 import Security
 
 public enum RemoteProtocol {
-    public static let version = 2
+    /// v3: `commands` and `upload`, which a v2 Mac rejects as unrecognized,
+    /// leaving the composer's menu empty and its uploads spinning.
+    public static let version = 3
     /// Below macOS's ephemeral range (49152–65535): any app's outgoing
     /// connection can hold an ephemeral port and block the listener's bind.
     public static let defaultPort: UInt16 = 47_741
@@ -34,6 +38,10 @@ public enum RemoteProtocol {
     public static let rowRange = 8...300
     /// Largest keyboard/paste payload accepted in one input frame.
     public static let maxInputBytes = 256 * 1024
+    /// Largest file a client may attach to a prompt in one upload frame.
+    public static let maxUploadBytes = 20 * 1024 * 1024
+    /// Longest UTF-8 file name an upload frame carries.
+    public static let maxUploadNameBytes = 255
 
     /// Client endpoint for `parameters(key:)`. The WebSocket client handshake
     /// needs a URL endpoint; a bare host/port endpoint aborts the connection.
@@ -134,6 +142,30 @@ public struct RemoteSession: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// One entry of an agent's `/` menu: a built-in command or a skill found on
+/// the Mac for the session's agent and working directory.
+public struct RemoteCommand: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case command
+        case skill
+    }
+
+    /// What follows the `/` when typed: `compact`, `skill:writing-plans`,
+    /// `superpowers:brainstorming`.
+    public let name: String
+    public let description: String
+    public let kind: Kind
+    /// Where it was found, for display: "Built-in", "Project", "User", a plugin.
+    public let source: String
+
+    public init(name: String, description: String, kind: Kind, source: String) {
+        self.name = name
+        self.description = description
+        self.kind = kind
+        self.source = source
+    }
+}
+
 /// Who currently decides the PTY size of a session, from the receiving
 /// client's point of view.
 public enum RemoteDriver: UInt8, Sendable {
@@ -185,6 +217,11 @@ public enum RemoteClientMessage: Equatable, Sendable {
     /// Keyboard bytes. Input is a real action: the host claims the session
     /// for this client before writing the bytes to the PTY.
     case input(session: UUID, data: Data)
+    /// Ask for the session's `/` menu. The host answers with `commands`.
+    case commands(session: UUID)
+    /// A file to attach to the next prompt. The host stores it and answers
+    /// `uploaded` with its path on the Mac, or `uploadFailed`.
+    case upload(session: UUID, id: UUID, name: String, data: Data)
 
     public func encoded() -> RemoteFrame {
         switch self {
@@ -213,16 +250,47 @@ public enum RemoteClientMessage: Equatable, Sendable {
                 columns: grid.columns, rows: grid.rows, workspace: workspaceID).json())
         case .input(let session, let data):
             return .binary(BinaryFrame.encode(kind: BinaryFrame.input, session: session, payload: data))
+        case .commands(let session):
+            return .text(ControlEnvelope(type: "commands", session: session).json())
+        case .upload(let session, let id, let name, let data):
+            let nameBytes = Array(name.utf8.prefix(RemoteProtocol.maxUploadNameBytes))
+            var payload = Data(capacity: 18 + nameBytes.count + data.count)
+            withUnsafeBytes(of: id.uuid) { payload.append(contentsOf: $0) }
+            payload.append(UInt8(nameBytes.count >> 8))
+            payload.append(UInt8(nameBytes.count & 0xFF))
+            payload.append(contentsOf: nameBytes)
+            payload.append(data)
+            return .binary(BinaryFrame.encode(kind: BinaryFrame.upload, session: session, payload: payload))
         }
     }
 
     public init?(frame: RemoteFrame) {
         switch frame {
         case .binary(let data):
-            guard let (kind, session, payload) = BinaryFrame.decode(data),
-                  kind == BinaryFrame.input,
-                  payload.count <= RemoteProtocol.maxInputBytes else { return nil }
-            self = .input(session: session, data: payload)
+            guard let (kind, session, payload) = BinaryFrame.decode(data) else { return nil }
+            switch kind {
+            case BinaryFrame.input:
+                guard payload.count <= RemoteProtocol.maxInputBytes else { return nil }
+                self = .input(session: session, data: payload)
+            case BinaryFrame.upload:
+                let bytes = [UInt8](payload.prefix(18))
+                guard bytes.count == 18 else { return nil }
+                let nameLength = Int(bytes[16]) << 8 | Int(bytes[17])
+                guard (1...RemoteProtocol.maxUploadNameBytes).contains(nameLength),
+                      payload.count >= 18 + nameLength,
+                      payload.count - 18 - nameLength <= RemoteProtocol.maxUploadBytes else { return nil }
+                let id = UUID(uuid: (
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                    bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+                let body = payload.dropFirst(18)
+                self = .upload(
+                    session: session,
+                    id: id,
+                    name: String(decoding: body.prefix(nameLength), as: UTF8.self),
+                    data: Data(body.dropFirst(nameLength)))
+            default:
+                return nil
+            }
         case .text(let data):
             guard let envelope = ControlEnvelope.decode(data) else { return nil }
             switch envelope.type {
@@ -247,6 +315,9 @@ public enum RemoteClientMessage: Equatable, Sendable {
             case "create":
                 guard let session = envelope.session, let grid = envelope.grid else { return nil }
                 self = .create(session: session, workspaceID: envelope.workspace, grid: grid)
+            case "commands":
+                guard let session = envelope.session else { return nil }
+                self = .commands(session: session)
             default:
                 return nil
             }
@@ -262,6 +333,11 @@ public enum RemoteServerMessage: Equatable, Sendable {
     /// The session ended or was removed on the Mac.
     case closed(session: UUID)
     case error(code: String, message: String)
+    /// Reply to the client's `commands`: built-ins first, then skills.
+    case commands(session: UUID, commands: [RemoteCommand])
+    /// The upload `id` is stored on the Mac at `path`.
+    case uploaded(id: UUID, path: String)
+    case uploadFailed(id: UUID, message: String)
 
     public func encoded() -> RemoteFrame {
         switch self {
@@ -286,6 +362,12 @@ public enum RemoteServerMessage: Equatable, Sendable {
             return .text(ControlEnvelope(type: "closed", session: session).json())
         case .error(let code, let message):
             return .text(ControlEnvelope(type: "error", code: code, message: message).json())
+        case .commands(let session, let commands):
+            return .text(ControlEnvelope(type: "commands", session: session, commands: commands).json())
+        case .uploaded(let id, let path):
+            return .text(ControlEnvelope(type: "uploaded", upload: id, path: path).json())
+        case .uploadFailed(let id, let message):
+            return .text(ControlEnvelope(type: "upload_failed", message: message, upload: id).json())
         }
     }
 
@@ -324,6 +406,15 @@ public enum RemoteServerMessage: Equatable, Sendable {
                 self = .closed(session: session)
             case "error":
                 self = .error(code: envelope.code ?? "unknown", message: envelope.message ?? "")
+            case "commands":
+                guard let session = envelope.session else { return nil }
+                self = .commands(session: session, commands: envelope.commands ?? [])
+            case "uploaded":
+                guard let id = envelope.upload, let path = envelope.path else { return nil }
+                self = .uploaded(id: id, path: path)
+            case "upload_failed":
+                guard let id = envelope.upload else { return nil }
+                self = .uploadFailed(id: id, message: envelope.message ?? "")
             default:
                 return nil
             }
@@ -342,8 +433,11 @@ private struct ControlEnvelope: Codable {
     var workspace: UUID?
     var workspaces: [RemoteWorkspace]?
     var sessions: [RemoteSession]?
+    var commands: [RemoteCommand]?
     var code: String?
     var message: String?
+    var upload: UUID?
+    var path: String?
 
     var grid: RemoteGrid? {
         guard let columns, let rows else { return nil }
@@ -363,6 +457,7 @@ private enum BinaryFrame {
     static let output: UInt8 = 0x01
     static let screen: UInt8 = 0x02
     static let input: UInt8 = 0x10
+    static let upload: UInt8 = 0x11
 
     static func encode(kind: UInt8, session: UUID, payload: Data) -> Data {
         var data = Data(capacity: 17 + payload.count)

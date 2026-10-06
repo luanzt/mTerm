@@ -461,6 +461,23 @@ only host of shells; the iPad runs its own SwiftTerm emulator and UI.
   a fresh screen once the link drains.
 - The Mac emulator answers terminal queries; the iPad mirror drops its own
   replies. Remote input is written with `process.send`, bypassing the Mac view.
+- **`/` menu:** a client's `commands` request is answered by
+  `RemoteCommandCatalog` for the session's agent and working directory:
+  curated built-ins, then skills. OMP skills come from `omp skill list --json`
+  run in that directory (`~/.bun/bin`, Homebrew, `/usr/local/bin`, else the
+  user's interactive login shell), named `skill:<name>`. Claude Code skills and
+  commands are scanned from project `.claude/` folders (working directory up to
+  home), `~/.claude/`, and plugins enabled in `enabledPlugins`
+  (`<plugin>:<name>`). The iPad composer sends prompts itself (paste, Enter
+  pacing per agent); the host still only writes input bytes.
+- **Attachments:** an `upload` frame (≤ `RemoteProtocol.maxUploadBytes`, 20 MB)
+  is saved by `RemoteAttachmentStore` to
+  `~/Library/Caches/mTerm/RemoteAttachments/<upload id>/<safe name>` and
+  answered with `uploaded` (path) or `uploadFailed`. Names are reduced to
+  ASCII `[A-Za-z0-9._-]` so prompts carry paths unquoted. Starting the server
+  removes uploads older than seven days. The iPad sends Claude/Codex images
+  as pasted paths (they become image attachments) and everything else as
+  `@path` mentions, after Orca's `agent-image-paste.ts`.
 
 ### Theme
 
