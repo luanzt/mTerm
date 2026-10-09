@@ -137,6 +137,18 @@ struct SettingsView: View {
                 }
 
                 GridRow {
+                    Text("Sidebar font")
+                    Picker("Sidebar font", selection: $settings.sidebarFontFamily) {
+                        Text("System").tag(String?.none)
+                        ForEach(SidebarFontCatalog.families, id: \.self) { family in
+                            Text(family).tag(String?.some(family))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 300)
+                }
+
+                GridRow {
                     Text("Sidebar text size")
                     Stepper(
                         "\(Int(settings.sidebarFontSize)) pt",
@@ -160,7 +172,7 @@ struct SettingsView: View {
             Divider()
 
             HStack {
-                Text("Changes apply immediately to every terminal pane.")
+                Text("Changes apply immediately. Sidebar fonts are Nerd Fonts, so agent title icons render.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()
