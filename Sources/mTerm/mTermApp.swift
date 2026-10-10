@@ -53,6 +53,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        SidebarFont.registerNerdFont()
         installMainMenu()
         installApplicationShortcuts()
         let content = WorkspaceView()

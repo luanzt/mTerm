@@ -132,6 +132,11 @@ The sidebar width defaults to 250 pt, is clamped to 180–420 pt, persists, and 
 be changed either in Settings or by dragging its trailing divider without animation.
 Terminal scrollback (`scrollbackLines`) defaults to 3,000 lines, is clamped to
 500–10,000, persists, and falls back to the default for invalid stored values.
+Sidebar and pane-header text has no font-family setting: it is always the
+system font (`SidebarFont`), with a cascade list to the bundled JetBrainsMono
+Nerd Font Mono so the Nerd Font icons OMP puts in session titles render. The
+font is a SwiftPM resource registered for the process at launch;
+`scripts/package.sh` must copy `mTerm_mTerm.bundle` into `Contents/Resources`.
 
 ### Layout model: `PaneGrid` (Models/PaneGrid.swift)
 

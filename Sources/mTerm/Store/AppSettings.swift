@@ -45,7 +45,6 @@ final class AppSettings: ObservableObject {
         static let terminalFontName = "mterm.settings.terminalFontName"
         static let terminalFontSize = "mterm.settings.terminalFontSize"
         static let sidebarFontSize = "mterm.settings.sidebarFontSize"
-        static let sidebarFontFamily = "mterm.settings.sidebarFontFamily"
         static let sidebarWidth = "mterm.settings.sidebarWidth"
         static let ansiColors = "mterm.settings.ansiColors"
         static let newTerminalPlacement = "mterm.settings.newTerminalPlacement"
@@ -80,18 +79,6 @@ final class AppSettings: ObservableObject {
                 sidebarFontSize = clamped
             } else {
                 defaults.set(sidebarFontSize, forKey: Key.sidebarFontSize)
-            }
-        }
-    }
-
-    /// Font family for sidebar text and pane-header titles; `nil` keeps the
-    /// system interface font.
-    @Published var sidebarFontFamily: String? {
-        didSet {
-            if let sidebarFontFamily {
-                defaults.set(sidebarFontFamily, forKey: Key.sidebarFontFamily)
-            } else {
-                defaults.removeObject(forKey: Key.sidebarFontFamily)
             }
         }
     }
@@ -160,9 +147,6 @@ final class AppSettings: ObservableObject {
             defaults.object(forKey: Key.sidebarFontSize),
             fallback: Self.defaultSidebarFontSize,
             range: Self.sidebarFontSizeRange)
-        sidebarFontFamily = defaults.string(forKey: Key.sidebarFontFamily).flatMap {
-            NSFontManager.shared.availableMembers(ofFontFamily: $0) == nil ? nil : $0
-        }
         sidebarWidth = Self.loadedSize(
             defaults.object(forKey: Key.sidebarWidth),
             fallback: Self.defaultSidebarWidth,
@@ -200,16 +184,6 @@ final class AppSettings: ObservableObject {
                 weight: .regular)
     }
 
-    /// The chosen sidebar family at `weight`, or `nil` for the system font.
-    func sidebarFont(size: CGFloat, weight: NSFont.Weight) -> NSFont? {
-        guard let sidebarFontFamily else { return nil }
-        let descriptor = NSFontDescriptor(fontAttributes: [
-            .family: sidebarFontFamily,
-            .traits: [NSFontDescriptor.TraitKey.weight: weight.rawValue],
-        ])
-        return NSFont(descriptor: descriptor, size: size)
-    }
-
     func setANSIColor(_ color: UInt32, at index: Int) {
         guard ansiColors.indices.contains(index) else { return }
         ansiColors[index] = color & 0x00FF_FFFF
@@ -225,7 +199,6 @@ final class AppSettings: ObservableObject {
         terminalFontName = Self.defaultTerminalFont.fontName
         terminalFontSize = Self.defaultTerminalFontSize
         sidebarFontSize = Self.defaultSidebarFontSize
-        sidebarFontFamily = nil
     }
 
     private static var defaultTerminalFont: NSFont {
@@ -286,22 +259,4 @@ enum TerminalFontCatalog {
             }
             .sorted { $0.familyName.localizedCaseInsensitiveCompare($1.familyName) == .orderedAscending }
     }()
-}
-
-/// Families offered for the sidebar: those carrying Nerd Font icons, which
-/// agents such as OMP put at the start of session titles.
-enum SidebarFontCatalog {
-    /// A Nerd Fonts Devicons glyph; plain fonts, including the system font,
-    /// leave this private-use code point uncovered.
-    private static let nerdFontProbe: Unicode.Scalar = "\u{E711}"
-
-    @MainActor
-    static let families: [String] = NSFontManager.shared.availableFontFamilies
-        .filter { family in
-            guard let font = NSFont(
-                descriptor: NSFontDescriptor(fontAttributes: [.family: family]),
-                size: 13) else { return false }
-            return font.coveredCharacterSet.contains(nerdFontProbe)
-        }
-        .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
 }

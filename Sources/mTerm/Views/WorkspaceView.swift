@@ -2,22 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private extension AppSettings {
-    /// Sidebar text in the user's chosen family, else the system font.
-    func sidebarTextFont(
-        size: CGFloat,
-        weight: NSFont.Weight = .regular,
-        monospaced: Bool = false
-    ) -> Font {
-        if let font = sidebarFont(size: size, weight: weight) {
-            return Font(font)
-        }
-        return Font(monospaced
-            ? NSFont.monospacedSystemFont(ofSize: size, weight: weight)
-            : NSFont.systemFont(ofSize: size, weight: weight))
-    }
-}
-
 struct WorkspaceView: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
@@ -162,7 +146,7 @@ private struct WorkspaceSidebar: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 0) {
                 Text(title)
-                    .font(settings.sidebarTextFont(
+                    .font(SidebarFont.font(
                         size: CGFloat(max(9, settings.sidebarFontSize - 2)),
                         weight: .bold))
                     .tracking(1)
@@ -186,7 +170,7 @@ private struct WorkspaceSidebar: View {
                         weight: .semibold))
                     .foregroundStyle(MTermTheme.accent)
                 Text(title)
-                    .font(settings.sidebarTextFont(
+                    .font(SidebarFont.font(
                         size: CGFloat(settings.sidebarFontSize),
                         weight: .bold))
                     .foregroundStyle(MTermTheme.text)
@@ -237,7 +221,7 @@ private struct WorkspaceFolderRow: View {
                 .rotationEffect(.degrees(hasChildren && isExpanded ? 90 : 0))
                 .frame(width: 12)
             Text(folder.name)
-                .font(settings.sidebarTextFont(
+                .font(SidebarFont.font(
                     size: CGFloat(settings.sidebarFontSize),
                     weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
@@ -245,7 +229,7 @@ private struct WorkspaceFolderRow: View {
             Spacer(minLength: 6)
             if count > 0 {
                 Text("\(count)")
-                    .font(settings.sidebarTextFont(
+                    .font(SidebarFont.font(
                         size: CGFloat(max(9, settings.sidebarFontSize - 2.5)),
                         weight: .semibold,
                         monospaced: true))
@@ -434,7 +418,7 @@ private struct SessionSidebarRow: View {
                 if isRenaming {
                     TextField("Terminal title", text: $titleDraft)
                         .textFieldStyle(.plain)
-                        .font(settings.sidebarTextFont(
+                        .font(SidebarFont.font(
                             size: CGFloat(settings.sidebarFontSize),
                             weight: .semibold))
                         .foregroundStyle(MTermTheme.text)
@@ -443,9 +427,7 @@ private struct SessionSidebarRow: View {
                         .onExitCommand { cancelRename() }
                 } else {
                     Text(displayTitle)
-                        .font(settings.sidebarTextFont(
-                            size: CGFloat(settings.sidebarFontSize),
-                            weight: isSelected ? .semibold : .regular))
+                        .font(SidebarFont.font(size: CGFloat(settings.sidebarFontSize)))
                         .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
                         .lineLimit(1)
                 }
@@ -454,7 +436,7 @@ private struct SessionSidebarRow: View {
                 // "open sessions" still show it.
                 if !isNested {
                     Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
-                        .font(settings.sidebarTextFont(
+                        .font(SidebarFont.font(
                             size: CGFloat(max(9, settings.sidebarFontSize - 2)),
                             monospaced: true))
                         .foregroundStyle(MTermTheme.dim2)
@@ -1224,12 +1206,12 @@ private struct TerminalPane: View {
                 isCodex: workspace.codexSessionIDs.contains(session.id),
                 isOMP: workspace.ompSessionIDs.contains(session.id))
             Text(workspace.displayTitle(for: session))
-                .font(settings.sidebarTextFont(size: 12, weight: .semibold))
+                .font(SidebarFont.font(size: 12, weight: .semibold))
                 .foregroundStyle(MTermTheme.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Text(URL(fileURLWithPath: session.workingDirectory).lastPathComponent)
-                .font(settings.sidebarTextFont(size: 10.5, monospaced: true))
+                .font(SidebarFont.font(size: 10.5, monospaced: true))
                 .foregroundStyle(MTermTheme.dim2)
                 .lineLimit(1)
                 .truncationMode(.tail)

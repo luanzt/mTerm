@@ -39,9 +39,14 @@ swift build -c release
 BIN_DIR="$(swift build -c release --show-bin-path)"
 BIN="$BIN_DIR/$APP_NAME"
 SPARKLE_FRAMEWORK="$BIN_DIR/Sparkle.framework"
+RESOURCE_BUNDLE="$BIN_DIR/${APP_NAME}_${APP_NAME}.bundle"
 [ -x "$BIN" ] || { echo "error: binary not found at $BIN" >&2; exit 1; }
 [ -d "$SPARKLE_FRAMEWORK" ] || {
     echo "error: Sparkle.framework not found at $SPARKLE_FRAMEWORK" >&2
+    exit 1
+}
+[ -d "$RESOURCE_BUNDLE" ] || {
+    echo "error: resource bundle not found at $RESOURCE_BUNDLE" >&2
     exit 1
 }
 
@@ -50,6 +55,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+# SwiftPM resources (the sidebar's Nerd Font); SidebarFont loads them from here.
+ditto "$RESOURCE_BUNDLE" "$APP/Contents/Resources/$(basename "$RESOURCE_BUNDLE")"
 install_name_tool -add_rpath "@executable_path/../Frameworks" \
     "$APP/Contents/MacOS/$APP_NAME"
 

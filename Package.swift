@@ -26,6 +26,8 @@ let package = Package(
             dependencies: [
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Sparkle", package: "Sparkle"),
-            ]),
+            ],
+            // The Nerd Font that sidebar text falls back to (SidebarFont).
+            resources: [.copy("Resources/JetBrainsMonoNerdFontMono-Regular.ttf")]),
         .testTarget(name: "mTermTests", dependencies: ["mTerm"]),
     ])
