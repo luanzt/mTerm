@@ -13,7 +13,7 @@ enum ApplicationWindowLifecycle {
 }
 
 @MainActor
-final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private static let mainWindowFrameAutosaveName = "mTerm.mainWindow"
 
     private let workspace = WorkspaceStore(
@@ -167,6 +167,19 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     @objc private func hideFocusedPane(_ sender: Any?) {
         guard let session = workspace.selectedSession else { return }
         workspace.hide(session)
+    }
+
+    @objc private func openFocusedWorkspaceInLiteCode(_ sender: Any?) {
+        guard settings.opensWorkspaceInLiteCode,
+              let folder = workspace.focusedPaneWorkspace else { return }
+        LiteCodeIntegration.open(folder)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(openFocusedWorkspaceInLiteCode(_:)) else { return true }
+        return settings.opensWorkspaceInLiteCode
+            && workspace.focusedPaneWorkspace != nil
+            && LiteCodeIntegration.applicationURL != nil
     }
 
     /// SwiftTerm treats Option as Meta and consumes Option-letter key events
@@ -367,6 +380,13 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         hidePaneItem.keyEquivalentModifierMask = .command
         hidePaneItem.target = self
         panesMenu.addItem(hidePaneItem)
+        let liteCodeItem = NSMenuItem(
+            title: "Open Workspace in LiteCode",
+            action: #selector(openFocusedWorkspaceInLiteCode(_:)),
+            keyEquivalent: "r")
+        liteCodeItem.keyEquivalentModifierMask = .command
+        liteCodeItem.target = self
+        panesMenu.addItem(liteCodeItem)
         panesMenu.addItem(.separator())
         for n in 1...6 {
             let item = NSMenuItem(title: "Pane \(n)",

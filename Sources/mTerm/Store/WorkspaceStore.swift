@@ -194,14 +194,19 @@ final class WorkspaceStore: ObservableObject {
         addSession(session, asNewPane: asNewPane, replacingPane: focusedPaneSessionID)
     }
 
+    /// Workspace folder owning the focused pane. `nil` for an ungrouped OPEN
+    /// SESSIONS pane: there is no project to infer from it.
+    var focusedPaneWorkspace: WorkspaceFolder? {
+        guard let focusedID = focusedPaneSessionID,
+              let workspaceID = session(for: focusedID)?.workspaceID else { return nil }
+        return workspaces.first { $0.id == workspaceID }
+    }
+
     /// ⌘T / ⇧⌘T: create another terminal for the workspace owning the focused
-    /// pane. There is no project to infer from an ungrouped OPEN SESSIONS pane,
-    /// so that case is intentionally a no-op.
+    /// pane. An ungrouped OPEN SESSIONS pane is intentionally a no-op.
     func createWorkspaceSessionFromFocusedPane(asNewPane: Bool = false) {
         guard let focusedID = focusedPaneSessionID,
-              let focusedSession = session(for: focusedID),
-              let workspaceID = focusedSession.workspaceID,
-              let workspace = workspaces.first(where: { $0.id == workspaceID }) else {
+              let workspace = focusedPaneWorkspace else {
             return
         }
         let session = makeSession(

@@ -51,6 +51,7 @@ final class AppSettings: ObservableObject {
         static let quitBehavior = "mterm.settings.quitBehavior"
         static let themeID = "mterm.settings.themeID"
         static let scrollbackLines = "mterm.settings.scrollbackLines"
+        static let opensWorkspaceInLiteCode = "mterm.settings.opensWorkspaceInLiteCode"
     }
 
     private let defaults: UserDefaults
@@ -129,6 +130,14 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// ⌘R opens the focused pane's workspace folder in LiteCode. Opt-in, so
+    /// the shortcut does nothing for people without LiteCode.
+    @Published var opensWorkspaceInLiteCode: Bool {
+        didSet {
+            defaults.set(opensWorkspaceInLiteCode, forKey: Key.opensWorkspaceInLiteCode)
+        }
+    }
+
     var opensNewTerminalsInSplit: Bool { newTerminalPlacement == .newSplit }
 
     init(defaults: UserDefaults = .standard) {
@@ -170,6 +179,8 @@ final class AppSettings: ObservableObject {
         quitBehavior = defaults.string(forKey: Key.quitBehavior)
             .flatMap(QuitBehavior.init(rawValue:))
             ?? .restorePanes
+
+        opensWorkspaceInLiteCode = defaults.bool(forKey: Key.opensWorkspaceInLiteCode)
 
         let storedTheme = defaults.string(forKey: Key.themeID)
             .flatMap(MTermThemeID.init(rawValue:)) ?? .emerald

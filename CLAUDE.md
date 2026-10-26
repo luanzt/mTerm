@@ -47,6 +47,11 @@ The manual menu currently owns these app-wide commands:
 - View ▸ Toggle Sidebar — ⌘B.
 - Panes ▸ Toggle Pane Maximize — ⌥F maximizes the focused pane or restores
   its previous layout.
+- Panes ▸ Open Workspace in LiteCode — ⌘R opens the focused pane's workspace
+  folder in LiteCode (`dev.luan.litecode`), which switches to or adds that
+  workspace. Opt-in via Settings › General; disabled for an ungrouped pane or
+  when LiteCode is not installed. `LiteCodeIntegration` prefers the running
+  LiteCode copy so a second installed build never starts a parallel instance.
 - Panes ▸ Pane 1…6 — ⌘1…⌘6, in the same visual order as `grid.paneIDs`.
 
 - `hosting.sizingOptions = []` is deliberate: without it, each SwiftTerm view's

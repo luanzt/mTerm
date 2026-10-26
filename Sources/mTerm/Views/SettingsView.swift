@@ -75,10 +75,26 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
+            Divider()
+
+            Text("LiteCode")
+                .font(.headline)
+
+            Toggle("Open the focused pane's workspace in LiteCode with ⌘R", isOn: $settings.opensWorkspaceInLiteCode)
+                .disabled(!isLiteCodeInstalled)
+
+            Text(isLiteCodeInstalled
+                ? "LiteCode switches to the matching workspace, adding it if needed. Panes outside a workspace are ignored."
+                : "LiteCode is not installed.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
             Spacer()
         }
         .padding(8)
     }
+
+    private var isLiteCodeInstalled: Bool { LiteCodeIntegration.applicationURL != nil }
 
     private var appearance: some View {
         VStack(alignment: .leading, spacing: 14) {

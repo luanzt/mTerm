@@ -125,6 +125,7 @@ so you can see several shells at once.
 | **⌘F**   | Search the focused terminal's visible buffer and scrollback |
 | **⌘B**   | Toggle the sidebar (also **View ▸ Toggle Sidebar**, or the titlebar button) |
 | **⌥F**   | Maximize the focused pane, or restore its previous layout |
+| **⌘R**   | Open the focused pane's workspace in LiteCode (enable in **Settings ▸ General**) |
 | **⌘1…⌘6** | Focus the corresponding visible pane |
 
 > Hidden sessions keep running. A shell parked out of the visible grid is **not**

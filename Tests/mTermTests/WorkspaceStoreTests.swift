@@ -669,6 +669,23 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertEqual(store.grid, gridBefore)
     }
 
+    func testFocusedPaneWorkspaceFollowsFocusedPaneNotHover() throws {
+        let folder = WorkspaceFolder(path: "/tmp/example-workspace")
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(try JSONEncoder().encode([folder]), forKey: "edev.workspace.folders")
+        let store = WorkspaceStore(defaults: defaults)
+        let openSession = store.sessions[0].id
+        store.createSession(in: folder, asNewPane: true)
+        let workspacePane = store.selectedSessionID!
+
+        store.hoveredSessionID = openSession
+        XCTAssertEqual(store.focusedPaneWorkspace, folder)
+
+        store.selectedSessionID = openSession
+        store.hoveredSessionID = workspacePane
+        XCTAssertNil(store.focusedPaneWorkspace)
+    }
+
     // MARK: setForeground (shell integration icon state)
 
     func testSetForegroundTracksClaude() {
