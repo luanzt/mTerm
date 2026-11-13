@@ -247,6 +247,8 @@ branch, which carries these changes on top of upstream:
 - Child PTY window-size updates can be deferred during a pane-divider drag.
 - Configurable resting/highlight colors for OSC 8 links.
 - A manual selection survives streaming output while mouse tracking is off.
+- Erasing or printing over Sixel/iTerm2 image cells removes the image there, so
+  repainted inline images do not leave stale copies.
 
 To bump SwiftTerm, rebase the fork's `mterm` branch onto the new upstream
 revision, keep all of these changes, and update the `revision:` pin — don't

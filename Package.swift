@@ -12,11 +12,12 @@ let package = Package(
         // shell prompts, on for foreground programs), deferrable child PTY
         // resizes, configurable foreground/highlight colors for OSC 8 links,
         // manual selections that survive output while mouse tracking is off,
-        // and a saved cursor that survives lowering the scrollback limit.
+        // a saved cursor that survives lowering the scrollback limit, and
+        // Sixel/iTerm2 images that erasing or printing over their cells removes.
         // The pinned revision is the tip of the fork's `mterm` branch. See the
         // dependency notes in CLAUDE.md before updating it.
         .package(url: "https://github.com/luanzt/SwiftTerm.git",
-                 revision: "0dea75d0e94133b5055b807da662da7afbb655b1"),
+                 revision: "111c89d6c83a6338908d6287c0d31cc2f390e900"),
         .package(url: "https://github.com/sparkle-project/Sparkle",
                  exact: "2.9.4"),
     ],

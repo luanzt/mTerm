@@ -56,8 +56,9 @@ visible grid pane.
 
 - Keep the pinned `luanzt/SwiftTerm` fork. It disables buffer reflow to prevent
   duplicated shell prompts during resize, exposes separate resting/highlight
-  link colors plus an activation-aware pointing-hand cursor, and keeps a manual
-  selection alive while output streams with mouse tracking off; do not silently
+  link colors plus an activation-aware pointing-hand cursor, keeps a manual
+  selection alive while output streams with mouse tracking off, and erases
+  Sixel/iTerm2 image cells that are erased or overwritten; do not silently
   switch to upstream.
 - Sparkle is the in-app updater. Keep the standard updater controller retained
   by `MTermAppDelegate` and keep Check for Updates wired to it.

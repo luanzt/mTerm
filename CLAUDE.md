@@ -546,6 +546,12 @@ these mTerm-specific changes:
   subtracts the trimmed line count, but the saved cursor is screen-relative, so
   lowering scrollback while vim/less/htop held the alternate screen restored the
   shell cursor to row 0 on exit.
+- Erasing cells (EL, ED, ECH) or printing over them drops the Sixel/iTerm2 image
+  slices covering those cells (`Buffer.clearCellImages`, using
+  `TerminalImage.cols`), matching xterm. Upstream only dropped them on `ED 2`, so
+  omp's inline SVG figures, which repaint a few rows lower while a reply streams,
+  left stale copies behind. Kitty placements still go away only through delete
+  commands.
 
 `Package.swift` pins the tip of the fork's `mterm` branch, which carries exactly
 these changes on top of upstream. (`edev-no-reflow` is the working branch these
