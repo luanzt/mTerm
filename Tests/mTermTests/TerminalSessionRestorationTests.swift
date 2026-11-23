@@ -39,4 +39,18 @@ final class TerminalSessionRestorationTests: XCTestCase {
                 for: .codex(locator: .name(name))))
         }
     }
+
+    func testBuildsOMPResumeCommandOnlyForAnExistingSessionFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mterm omp \(UUID().uuidString)/sessions/-app's", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent().deletingLastPathComponent()) }
+        let file = directory.appendingPathComponent("s.jsonl")
+
+        XCTAssertNil(TerminalSessionRestoration.command(for: .omp(sessionFile: file.path)))
+        try Data().write(to: file)
+        XCTAssertEqual(
+            TerminalSessionRestoration.command(for: .omp(sessionFile: file.path)),
+            "omp --resume '\(file.path.replacingOccurrences(of: "'", with: "'\"'\"'"))'")
+    }
 }

@@ -104,16 +104,20 @@ struct SessionSnapshot: Codable, Equatable {
 enum AgentResumeDescriptor: Codable, Equatable {
     case claude(sessionID: UUID)
     case codex(locator: CodexResumeLocator)
+    /// OMP resumes by the session file its process holds open for writing.
+    case omp(sessionFile: String)
 
     private enum Kind: String, Codable {
         case claude
         case codex
+        case omp
     }
 
     private enum CodingKeys: String, CodingKey {
         case kind
         case sessionID
         case locator
+        case sessionFile
     }
 
     init(from decoder: Decoder) throws {
@@ -125,6 +129,8 @@ enum AgentResumeDescriptor: Codable, Equatable {
             self = .codex(locator: try container.decode(
                 CodexResumeLocator.self,
                 forKey: .locator))
+        case .omp:
+            self = .omp(sessionFile: try container.decode(String.self, forKey: .sessionFile))
         }
     }
 
@@ -137,6 +143,9 @@ enum AgentResumeDescriptor: Codable, Equatable {
         case .codex(let locator):
             try container.encode(Kind.codex, forKey: .kind)
             try container.encode(locator, forKey: .locator)
+        case .omp(let sessionFile):
+            try container.encode(Kind.omp, forKey: .kind)
+            try container.encode(sessionFile, forKey: .sessionFile)
         }
     }
 }

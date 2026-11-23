@@ -280,12 +280,18 @@ never a persisted arbitrary command or `-lc`. A
 lifetime of that terminal view. After OSC 633 reports the shell's first idle
 prompt, the bridge reports idle to `WorkspaceStore`, marks restoration launched,
 then sends exactly one safely shell-quoted command plus CR:
-`claude --resume <uuid>`, `codex resume <uuid>`, or
-`codex resume -- <exact-name>`. The `--` delimiter prevents a name such as
+`claude --resume <uuid>`, `codex resume <uuid>`, `codex resume -- <exact-name>`,
+or `omp --resume <session-file>`. The `--` delimiter prevents a name such as
 `--last` from becoming a CLI option. This ordering preserves the first pending
 locator while allowing a failed command that returns to idle to clear it and
 avoid a relaunch loop. Hidden restored sessions follow the same path because
 their terminal views are still constructed and parked off-screen.
+
+OMP emits no session identity, so on each OMP run-state title change the bridge
+asks `OMPSessionLocator` for the `…/sessions/…/*.jsonl` file the PTY's
+foreground process group leader holds open for writing (libproc, shortest path
+wins over nested subagent transcripts). That tracks `/new` and `/resume` inside
+OMP. A session file that no longer exists is not resumed.
 
 `ShellIntegration.terminalBaseEnvironment` replaces inherited terminal identity
 with `TERM_PROGRAM=mTerm`, advertises true color, and defaults

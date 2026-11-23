@@ -1347,6 +1347,27 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
     }
 
+    func testOMPSessionFilePersistsUntilOMPExits() throws {
+        let fixture = try makeRestorationFixture(activeAgent: nil)
+        defer { fixture.remove() }
+
+        fixture.store.reportOMPSessionFile(fixture.paneID, path: "/s/a.jsonl")
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID),
+                     "Ignored unless OMP owns the pane")
+
+        fixture.store.setForeground(fixture.paneID, command: "omp")
+        fixture.store.reportOMPSessionFile(fixture.paneID, path: "/s/a.jsonl")
+        fixture.store.reportOMPSessionFile(fixture.paneID, path: "/s/b.jsonl")
+        fixture.store.flushSnapshot()
+        XCTAssertEqual(
+            fixture.snapshotStore.load()?.sessions[0].activeAgent,
+            .omp(sessionFile: "/s/b.jsonl"),
+            "A /resume switch inside OMP replaces the file")
+
+        fixture.store.setForeground(fixture.paneID, command: nil)
+        XCTAssertNil(fixture.store.restorationIntent(for: fixture.paneID))
+    }
+
     func testClaudeIdentityIsIgnoredUnlessClaudeOwnsForeground() throws {
         let fixture = try makeRestorationFixture(activeAgent: nil)
         defer { fixture.remove() }

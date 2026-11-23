@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// OMP reports its interactive lifecycle through OSC 0 terminal titles. The
@@ -45,5 +46,52 @@ enum OMPIntegration {
     private static func normalizedTitle(_ title: Substring) -> String? {
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+}
+
+/// Finds the session file a pane's OMP process is writing. OMP publishes no
+/// session identity to the terminal, but holds its `<sessions>/…/<id>.jsonl`
+/// transcript open for appending for as long as that conversation is active,
+/// including after `/resume` or `/new` switch it.
+enum OMPSessionLocator {
+    /// The session file held by the PTY's foreground process group leader.
+    static func sessionFile(foregroundOf ptyFD: Int32) -> String? {
+        guard ptyFD >= 0 else { return nil }
+        let group = tcgetpgrp(ptyFD)
+        return group > 1 ? sessionFile(openedBy: group) : nil
+    }
+
+    static func sessionFile(openedBy pid: pid_t) -> String? {
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        let byteCount = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard byteCount > 0 else { return nil }
+        // Headroom for descriptors opened between the sizing and data calls.
+        var descriptors = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(byteCount) / stride + 16)
+        let filled = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &descriptors,
+                                  Int32(descriptors.count * stride))
+        guard filled > 0 else { return nil }
+
+        var candidates: [String] = []
+        for descriptor in descriptors.prefix(Int(filled) / stride)
+        where descriptor.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) {
+            var info = vnode_fdinfowithpath()
+            let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+            guard proc_pidfdinfo(pid, descriptor.proc_fd, PROC_PIDFDVNODEPATHINFO,
+                                 &info, size) == size,
+                  // FWRITE: a session being recorded, not a file merely read.
+                  info.pfi.fi_openflags & 0x2 != 0 else { continue }
+            let path = withUnsafeBytes(of: info.pvip.vip_path) { bytes in
+                String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            if isSessionFile(path) {
+                candidates.append(path)
+            }
+        }
+        // Subagent transcripts nest below the main session's directory.
+        return candidates.min { $0.count < $1.count }
+    }
+
+    static func isSessionFile(_ path: String) -> Bool {
+        path.hasPrefix("/") && path.hasSuffix(".jsonl") && path.contains("/sessions/")
     }
 }

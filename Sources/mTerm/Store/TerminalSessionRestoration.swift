@@ -19,6 +19,12 @@ enum TerminalSessionRestoration {
             // End option parsing before an arbitrary user-defined name so a
             // value such as "--last" cannot silently select a different thread.
             return "codex resume -- \(shellQuote(name))"
+        case .omp(let sessionFile):
+            // A missing file would make OMP open its picker or start fresh
+            // instead of the conversation this pane had.
+            guard isValidName(sessionFile),
+                  FileManager.default.fileExists(atPath: sessionFile) else { return nil }
+            return "omp --resume \(shellQuote(sessionFile))"
         }
     }
 

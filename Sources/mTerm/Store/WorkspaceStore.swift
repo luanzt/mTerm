@@ -982,6 +982,17 @@ final class WorkspaceStore: ObservableObject {
         agentResumeDescriptors[id] = .claude(sessionID: sessionID)
     }
 
+    /// Records the session file the pane's OMP process holds open, so a
+    /// restored pane resumes exactly that conversation.
+    func reportOMPSessionFile(_ id: SessionRecord.ID, path: String) {
+        guard session(for: id) != nil,
+              ompSessionIDs.contains(id) else { return }
+        agentRestorationPhases[id] = .acknowledged
+        if agentResumeDescriptors[id] != .omp(sessionFile: path) {
+            agentResumeDescriptors[id] = .omp(sessionFile: path)
+        }
+    }
+
     func prepareForTermination(_ behavior: QuitBehavior) {
         isPreparingForTermination = true
         switch behavior {
@@ -1021,6 +1032,8 @@ final class WorkspaceStore: ObservableObject {
             expectedCommand = "claude"
         case .codex:
             expectedCommand = "codex"
+        case .omp:
+            expectedCommand = "omp"
         }
 
         switch agentRestorationPhases[id] {

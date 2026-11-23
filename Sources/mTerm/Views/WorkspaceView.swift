@@ -653,7 +653,7 @@ private struct PullRequestBadge: View {
         Button {
             NSWorkspace.shared.open(pullRequest.url)
         } label: {
-            Text("#\(pullRequest.number)")
+            Text(verbatim: "#\(pullRequest.number)")
                 .font(SidebarFont.font(
                     size: CGFloat(max(9, settings.sidebarFontSize - 2)),
                     weight: .semibold,
@@ -1127,6 +1127,9 @@ private struct TerminalPane: View {
                                      workspace.reportClaudeSessionIdentity(
                                          session.id,
                                          sessionID: $0)
+                                 },
+                                 onOMPSessionFile: {
+                                     workspace.reportOMPSessionFile(session.id, path: $0)
                                  },
                                  onSelect: {
                                      workspace.selectedSessionID = session.id

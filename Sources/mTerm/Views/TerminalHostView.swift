@@ -46,6 +46,8 @@ struct TerminalHostView: NSViewRepresentable {
     var onRestorationLaunched: () -> Void = {}
     /// Reports the authoritative UUID emitted by Claude's SessionStart hook.
     var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
+    /// Reports the session file OMP is writing whenever its run state changes.
+    var onOMPSessionFile: (String) -> Void = { _ in }
     /// Selects the owning pane when the user clicks its AppKit-backed terminal
     /// view or Finder drops files on it. Clicks are routed from `mouseDown`
     /// because a SwiftUI tap gesture can miss a click that AppKit still turns
@@ -100,6 +102,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onRestorationLaunched = onRestorationLaunched
         context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
+        context.coordinator.onOMPSessionFile = onOMPSessionFile
         context.coordinator.onSelect = onSelect
         context.coordinator.onProcessTeardown = onProcessTeardown
         terminal.onFileDrop = { [weak coordinator = context.coordinator, weak terminal] urls in
@@ -308,6 +311,7 @@ struct TerminalHostView: NSViewRepresentable {
         context.coordinator.onAgentWorkInterrupted = onAgentWorkInterrupted
         context.coordinator.onRestorationLaunched = onRestorationLaunched
         context.coordinator.onClaudeSessionIdentity = onClaudeSessionIdentity
+        context.coordinator.onOMPSessionFile = onOMPSessionFile
         context.coordinator.onSelect = onSelect
         context.coordinator.onProcessTeardown = onProcessTeardown
         if context.coordinator.appliedFontName != fontName
@@ -399,6 +403,7 @@ struct TerminalHostView: NSViewRepresentable {
         var onAgentWorkInterrupted: () -> Void = {}
         var onRestorationLaunched: () -> Void = {}
         var onClaudeSessionIdentity: (UUID) -> Void = { _ in }
+        var onOMPSessionFile: (String) -> Void = { _ in }
         var onSelect: () -> Void = {}
         var onProcessTeardown: () -> Void = {}
         private var pendingTitleUpdate: DispatchWorkItem?
@@ -520,11 +525,15 @@ struct TerminalHostView: NSViewRepresentable {
                 guard let update = OMPIntegration.parseTerminalTitle(title),
                       update != lastOMPTerminalTitleUpdate else { return }
                 lastOMPTerminalTitleUpdate = update
+                // A run-state change is when OMP may have created, resumed, or
+                // switched its session file.
+                let sessionFile = OMPSessionLocator.sessionFile(foregroundOf: source.process.childfd)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     pendingTitleUpdate?.cancel()
                     pendingTitleUpdate = nil
                     onTerminalTitle(title)
+                    if let sessionFile { onOMPSessionFile(sessionFile) }
                 }
                 return
             }
