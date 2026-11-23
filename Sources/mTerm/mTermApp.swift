@@ -21,6 +21,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private let settings = AppSettings()
     private let terminalProcesses = TerminalProcessRegistry()
     private let remoteControl = RemoteControl()
+    private let pullRequests = SessionPullRequestStore()
     private var window: NSWindow?
     private var settingsWindow: NSWindow?
     private var keyDownMonitor: Any?
@@ -50,6 +51,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             self?.terminalProcesses.terminate(sessionID)
         }
         remoteControl.attach(to: workspace)
+        pullRequests.attach(to: workspace)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -61,6 +63,7 @@ final class MTermAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             .environmentObject(settings)
             .environmentObject(terminalProcesses)
             .environmentObject(remoteControl)
+            .environmentObject(pullRequests)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),

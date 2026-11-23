@@ -211,6 +211,14 @@ constraints learned the hard way:
   keep its conversation title compressible/truncated. Agent titles can be much
   wider than a split pane; allowing either the title or SwiftTerm's intrinsic
   width to win makes the next pane appear to overlap the existing one.
+- Sidebar session rows (never workspace folder rows) show the pull request for
+  the branch checked out in the session's working directory, colored by GitHub
+  state; clicking opens it. `SessionPullRequestStore`
+  (Store/SessionPullRequests.swift) runs `gh pr view` per directory when a
+  session appears or changes directory, on selection (throttled), when an agent
+  turn ends, and every 3 minutes. Trunk branches (`main`/`master`/`develop` and
+  `origin/HEAD`) never show one. Without `gh` or network it keeps the last badge
+  instead of clearing it.
 
 ### Terminal bridge: `TerminalHostView.swift`
 

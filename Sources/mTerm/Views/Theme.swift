@@ -179,6 +179,11 @@ enum MTermTheme {
     static let terminalIconBackground = Color(hex: 0x2A3038)
     static let terminalIconChevron = Color(hex: 0x32D74B)
     static let terminalIconUnderscore = Color(hex: 0xFFFFFF)
+    // GitHub's own pull request state colors, so a badge reads at a glance.
+    static let pullRequestOpen = Color(hex: 0x3FB950)
+    static let pullRequestDraft = Color(hex: 0x8B949E)
+    static let pullRequestMerged = Color(hex: 0xA371F7)
+    static let pullRequestClosed = Color(hex: 0xF85149)
 
     /// Opacity applied to an unfocused pane — deliberately gentle so terminal
     /// text stays readable.

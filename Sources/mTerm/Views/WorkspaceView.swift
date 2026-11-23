@@ -395,6 +395,7 @@ enum SessionSidebarClickAction: Equatable {
 private struct SessionSidebarRow: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var pullRequests: SessionPullRequestStore
     let session: SessionRecord
     var isNested = false
     @Binding var dropTarget: SessionDropTarget?
@@ -444,6 +445,9 @@ private struct SessionSidebarRow: View {
                 }
             }
             Spacer()
+            if let pullRequest = pullRequests.pullRequests[session.id] {
+                PullRequestBadge(pullRequest: pullRequest)
+            }
             if workspace.agentWorkingSessionIDs.contains(session.id) {
                 WanderSpinner(size: 11, color: .white)
                     .frame(width: 16, height: 16)
@@ -618,6 +622,53 @@ private struct SessionReorderDropDelegate: DropDelegate {
             return
         }
         dropTarget = SessionDropTarget(id: targetID, after: info.location.y > rowHeight / 2)
+    }
+}
+
+/// A session's pull request number in GitHub's state color; clicking opens it.
+private struct PullRequestBadge: View {
+    @EnvironmentObject private var settings: AppSettings
+    let pullRequest: SessionPullRequest
+    @State private var isHovering = false
+
+    private var color: Color {
+        switch pullRequest.state {
+        case .open: MTermTheme.pullRequestOpen
+        case .draft: MTermTheme.pullRequestDraft
+        case .merged: MTermTheme.pullRequestMerged
+        case .closed: MTermTheme.pullRequestClosed
+        }
+    }
+
+    private var stateName: String {
+        switch pullRequest.state {
+        case .open: "open"
+        case .draft: "draft"
+        case .merged: "merged"
+        case .closed: "closed"
+        }
+    }
+
+    var body: some View {
+        Button {
+            NSWorkspace.shared.open(pullRequest.url)
+        } label: {
+            Text("#\(pullRequest.number)")
+                .font(SidebarFont.font(
+                    size: CGFloat(max(9, settings.sidebarFontSize - 2)),
+                    weight: .semibold,
+                    monospaced: true))
+                .foregroundStyle(color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule().fill(color.opacity(isHovering ? 0.28 : 0.16)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .help("Pull request #\(pullRequest.number) (\(stateName)) — open on GitHub")
+        .onHover { isHovering = $0 }
     }
 }
 
