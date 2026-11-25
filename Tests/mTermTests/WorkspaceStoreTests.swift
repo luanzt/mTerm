@@ -796,6 +796,60 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.agentWorkingSessionIDs.contains(session.id))
     }
 
+    func testAgentAttentionFlagsOnlyUnfocusedFinishedOrWaitingSessions() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let background = store.sessions[0]
+        store.createSession(asNewPane: true)
+        XCTAssertNotEqual(store.selectedSessionID, background.id)
+
+        store.setForeground(background.id, command: "omp")
+        store.setAgentTitle(background.id, title: "π ⠋ Fix auth")
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+        store.setAgentTitle(background.id, title: "π > Fix auth")
+        XCTAssertTrue(store.agentAttentionSessionIDs.contains(background.id))
+
+        store.selectedSessionID = background.id
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+
+        // The focused pane never raises the bell.
+        store.setAgentTitle(background.id, title: "π ⠋ Fix auth")
+        store.setAgentTitle(background.id, title: "π > Fix auth")
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+
+        // Idle title repeats after dismissal must not raise it again.
+        store.selectedSessionID = store.sessions[1].id
+        store.setAgentTitle(background.id, title: "π > Fix auth")
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+
+        // An ask/approval prompt waits on the user.
+        store.setAgentTitle(background.id, title: "π ! Fix auth")
+        XCTAssertTrue(store.agentAttentionSessionIDs.contains(background.id))
+
+        // A new turn replaces the bell with the working spinner.
+        store.setAgentTitle(background.id, title: "π ⠋ Fix auth")
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+    }
+
+    func testClaudeAttentionDistinguishesCompletionFromInterruption() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let background = store.sessions[0]
+        store.createSession(asNewPane: true)
+        store.setForeground(background.id, command: "claude")
+
+        store.reportAgentInputSubmitted(background.id)
+        store.reportAgentWorkInterrupted(background.id)
+        store.reportAgentTurnCompleted(background.id)
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+
+        store.reportAgentInputSubmitted(background.id)
+        store.reportAgentTurnCompleted(background.id)
+        XCTAssertFalse(store.agentWorkingSessionIDs.contains(background.id))
+        XCTAssertTrue(store.agentAttentionSessionIDs.contains(background.id))
+
+        store.close(background)
+        XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
+    }
+
     func testAgentWorkingStateClearsWhenTurnIsInterrupted() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let session = store.sessions[0]

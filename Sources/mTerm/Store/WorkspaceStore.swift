@@ -22,7 +22,10 @@ final class WorkspaceStore: ObservableObject {
     }
     @Published private(set) var workspaces: [WorkspaceFolder]
     @Published var selectedSessionID: SessionRecord.ID? {
-        didSet { durableStateDidChange() }
+        didSet {
+            if let selectedSessionID { agentAttentionSessionIDs.remove(selectedSessionID) }
+            durableStateDidChange()
+        }
     }
     @Published var draggedSessionID: SessionRecord.ID?
     /// Non-nil only when a visible pane header initiated the current session
@@ -66,6 +69,10 @@ final class WorkspaceStore: ObservableObject {
     /// OMP sessions whose ask or approval prompt waits on the user, from the
     /// `!` terminal-title run state.
     @Published private(set) var agentAwaitingSessionIDs: Set<SessionRecord.ID> = []
+    /// Unfocused agent sessions that finished a turn or wait on the user since
+    /// the user last focused them. Drives the sidebar bell; focusing the
+    /// session, starting a new turn, or closing it clears the flag.
+    @Published private(set) var agentAttentionSessionIDs: Set<SessionRecord.ID> = []
     /// Validated OSC 0/2 titles emitted by active Claude, Codex, or OMP processes.
     /// Kept separately so each session's stable "Terminal N" title is restored
     /// when shell integration reports that the pane is idle again.
@@ -360,6 +367,7 @@ final class WorkspaceStore: ObservableObject {
         ompSessionIDs.remove(session.id)
         agentWorkingSessionIDs.remove(session.id)
         agentAwaitingSessionIDs.remove(session.id)
+        agentAttentionSessionIDs.remove(session.id)
         agentSessionTitles.removeValue(forKey: session.id)
         manuallyRenamedSessionIDs.remove(session.id)
         agentResumeDescriptors.removeValue(forKey: session.id)
@@ -488,16 +496,41 @@ final class WorkspaceStore: ObservableObject {
     /// instead of key inference, so local interactions cannot stick it on.
     func reportAgentInputSubmitted(_ id: SessionRecord.ID) {
         guard claudeSessionIDs.contains(id) else { return }
-        agentWorkingSessionIDs.insert(id)
+        beginAgentWork(id)
+    }
+
+    /// Claude's `Stop` hook ended the turn on its own, unlike an interruption.
+    func reportAgentTurnCompleted(_ id: SessionRecord.ID) {
+        guard claudeSessionIDs.contains(id) else { return }
+        endAgentWork(id)
     }
 
     /// Escape and Ctrl-C interrupt an in-flight agent turn and return the TUI to
-    /// user input without necessarily producing another lifecycle event.
+    /// user input without necessarily producing another lifecycle event. The
+    /// user is at the pane, so this never raises the bell.
     func reportAgentWorkInterrupted(_ id: SessionRecord.ID) {
         guard claudeSessionIDs.contains(id)
                 || codexSessionIDs.contains(id)
                 || ompSessionIDs.contains(id) else { return }
         agentWorkingSessionIDs.remove(id)
+    }
+
+    private func beginAgentWork(_ id: SessionRecord.ID) {
+        if !agentWorkingSessionIDs.contains(id) { agentWorkingSessionIDs.insert(id) }
+        if agentAttentionSessionIDs.contains(id) { agentAttentionSessionIDs.remove(id) }
+    }
+
+    /// Only a turn that was in flight counts as finished, so repeated idle
+    /// title updates cannot raise the bell again after the user dismissed it.
+    private func endAgentWork(_ id: SessionRecord.ID) {
+        guard agentWorkingSessionIDs.contains(id) else { return }
+        agentWorkingSessionIDs.remove(id)
+        flagAgentAttention(id)
+    }
+
+    private func flagAgentAttention(_ id: SessionRecord.ID) {
+        guard id != selectedSessionID, !agentAttentionSessionIDs.contains(id) else { return }
+        agentAttentionSessionIDs.insert(id)
     }
 
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
@@ -512,15 +545,14 @@ final class WorkspaceStore: ObservableObject {
         if isOMP {
             guard let update = OMPIntegration.parseTerminalTitle(rawTitle) else { return }
             if update.isWorking {
-                if !agentWorkingSessionIDs.contains(id) {
-                    agentWorkingSessionIDs.insert(id)
-                }
-            } else if agentWorkingSessionIDs.contains(id) {
-                agentWorkingSessionIDs.remove(id)
+                beginAgentWork(id)
+            } else {
+                endAgentWork(id)
             }
             if update.isAwaitingUser != agentAwaitingSessionIDs.contains(id) {
                 if update.isAwaitingUser {
                     agentAwaitingSessionIDs.insert(id)
+                    flagAgentAttention(id)
                 } else {
                     agentAwaitingSessionIDs.remove(id)
                 }
@@ -530,9 +562,9 @@ final class WorkspaceStore: ObservableObject {
         } else if isCodex,
                   let update = CodexIntegration.parseTerminalTitle(rawTitle) {
             if update.isWorking {
-                agentWorkingSessionIDs.insert(id)
+                beginAgentWork(id)
             } else {
-                agentWorkingSessionIDs.remove(id)
+                endAgentWork(id)
             }
             guard let conversationTitle = update.conversationTitle else { return }
             scopedTitle = conversationTitle
@@ -748,12 +780,16 @@ final class WorkspaceStore: ObservableObject {
         kind: ClaudeIntegration.AttentionKind
     ) {
         guard let session = session(for: id) else { return }
+        if kind.expectsUserResponse || agentWorkingSessionIDs.contains(id) {
+            flagAgentAttention(id)
+        }
         agentWorkingSessionIDs.remove(id)
         onClaudeAttention?(session, kind)
     }
 
     func reportCodexAttention(_ id: SessionRecord.ID) {
         guard let session = session(for: id) else { return }
+        flagAgentAttention(id)
         agentWorkingSessionIDs.remove(id)
         onCodexAttention?(session)
     }

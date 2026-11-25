@@ -179,6 +179,7 @@ enum MTermTheme {
     static let terminalIconBackground = Color(hex: 0x2A3038)
     static let terminalIconChevron = Color(hex: 0x32D74B)
     static let terminalIconUnderscore = Color(hex: 0xFFFFFF)
+    static let agentAttention = Color(hex: 0xFACC15)  // sidebar bell: agent done / waiting
     // GitHub's own pull request state colors, so a badge reads at a glance.
     static let pullRequestOpen = Color(hex: 0x3FB950)
     static let pullRequestDraft = Color(hex: 0x8B949E)

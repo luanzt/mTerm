@@ -486,6 +486,20 @@ private struct SessionSidebarRow: View {
         .padding(.vertical, 8)
         .background(isSelected ? MTermTheme.rowSelected : .clear)
         .overlay(alignment: .leading) {
+            if workspace.agentAttentionSessionIDs.contains(session.id) {
+                // Drawn in the leading gap so the agent icon and title keep
+                // their columns.
+                Image(systemName: "bell.fill")
+                    .font(.system(
+                        size: CGFloat(max(8, settings.sidebarFontSize - 3)),
+                        weight: .semibold))
+                    .foregroundStyle(MTermTheme.agentAttention)
+                    .frame(width: 12)
+                    .offset(x: sidebarRowInset + (isNested ? 12 : 0) - 16)
+                    .accessibilityLabel("Agent needs attention")
+            }
+        }
+        .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 1)
                 .fill(MTermTheme.accent)
                 .frame(width: 2)
@@ -1139,6 +1153,9 @@ private struct TerminalPane: View {
                                  },
                                  onAgentWorkInterrupted: {
                                      workspace.reportAgentWorkInterrupted(session.id)
+                                 },
+                                 onAgentTurnCompleted: {
+                                     workspace.reportAgentTurnCompleted(session.id)
                                  },
                                  onRestorationLaunched: {
                                      workspace.reportRestorationLaunched(session.id)

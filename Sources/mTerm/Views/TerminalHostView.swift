@@ -41,6 +41,8 @@ struct TerminalHostView: NSViewRepresentable {
     var onAgentInputSubmitted: () -> Void = {}
     /// Clears the transient working indicator when the user interrupts a turn.
     var onAgentWorkInterrupted: () -> Void = {}
+    /// Reports Claude's `Stop` hook: the turn finished without the user.
+    var onAgentTurnCompleted: () -> Void = {}
     /// Transitions the store's pending restore state immediately before the
     /// one-shot command is sent to the shell.
     var onRestorationLaunched: () -> Void = {}
@@ -206,7 +208,7 @@ struct TerminalHostView: NSViewRepresentable {
         }
         let reportAttention = onClaudeAttention
         let reportClaudeTurnStarted = onAgentInputSubmitted
-        let reportClaudeTurnCompleted = onAgentWorkInterrupted
+        let reportClaudeTurnCompleted = onAgentTurnCompleted
         terminal.getTerminal().registerOscHandler(code: ClaudeIntegration.oscCode) { payload in
             if let sessionID = ClaudeIntegration.sessionID(
                 from: payload,
