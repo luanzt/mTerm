@@ -73,6 +73,12 @@ struct SidebarToggleButton: View {
     }
 }
 
+/// Gap between the sidebar edge and its controls. Rows span the full sidebar
+/// width so their highlight reaches both edges; their content is inset by
+/// `sidebarRowInset` to line up with the controls.
+private let sidebarInset: CGFloat = 12
+private let sidebarRowInset: CGFloat = sidebarInset + 10
+
 private struct WorkspaceSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
@@ -121,7 +127,6 @@ private struct WorkspaceSidebar: View {
                         }
                     }
                 }
-                .padding(.horizontal, 12)
                 .padding(.top, 8)
                 .padding(.bottom, 14)
             }
@@ -154,7 +159,7 @@ private struct WorkspaceSidebar: View {
                 Spacer()
                 accessory()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, sidebarRowInset)
             content()
         }
     }
@@ -186,6 +191,7 @@ private struct WorkspaceSidebar: View {
             )
         })
         .buttonStyle(.plain)
+        .padding(.horizontal, sidebarInset)
     }
 }
 
@@ -213,18 +219,17 @@ private struct WorkspaceFolderRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: hasChildren ? "chevron.right" : "folder")
+            Image(systemName: "folder")
                 .font(.system(
                     size: CGFloat(max(9, settings.sidebarFontSize - 2)),
                     weight: .semibold))
                 .foregroundStyle(MTermTheme.dim2)
-                .rotationEffect(.degrees(hasChildren && isExpanded ? 90 : 0))
                 .frame(width: 12)
             Text(folder.name)
                 .font(SidebarFont.font(
                     size: CGFloat(settings.sidebarFontSize),
                     weight: .semibold))
-                .foregroundStyle(MTermTheme.text)
+                .foregroundStyle(MTermTheme.dim)
                 .lineLimit(1)
             Spacer(minLength: 6)
             if count > 0 {
@@ -247,18 +252,33 @@ private struct WorkspaceFolderRow: View {
                         || NSEvent.modifierFlags.contains(.command))
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, sidebarRowInset)
         .padding(.vertical, 7)
         .background(GeometryReader { g in
             Color.clear.onAppear { rowHeight = g.size.height }
         })
         .background(isHovering ? MTermTheme.rowHover : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
         .onHover { isHovering = $0 }
         .opacity(workspace.draggedWorkspaceID == folder.id ? 0.4 : 1)
         .overlay(alignment: .top) { insertionLine(visible: isTarget(after: false)) }
         .overlay(alignment: .bottom) { insertionLine(visible: isTarget(after: true)) }
         .contentShape(Rectangle())
+        // The chevron sits in the leading gap so the folder icon keeps its
+        // column whether or not the workspace has children.
+        .overlay(alignment: .leading) {
+            if hasChildren {
+                Image(systemName: "chevron.right")
+                    .font(.system(
+                        size: CGFloat(max(8, settings.sidebarFontSize - 3)),
+                        weight: .semibold))
+                    .foregroundStyle(MTermTheme.dim2)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 12, height: rowHeight)
+                    .contentShape(Rectangle())
+                    .offset(x: 4)
+                    .opacity(workspace.draggedWorkspaceID == folder.id ? 0.4 : 1)
+            }
+        }
         .onTapGesture {
             if hasChildren { withAnimation(.easeInOut(duration: 0.15)) { onToggle() } }
         }
@@ -328,7 +348,7 @@ private struct WorkspaceFolderRow: View {
         RoundedRectangle(cornerRadius: 1)
             .fill(MTermTheme.accent)
             .frame(height: 2)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, sidebarRowInset)
             .opacity(visible ? 1 : 0)
     }
 }
@@ -429,7 +449,7 @@ private struct SessionSidebarRow: View {
                 } else {
                     Text(displayTitle)
                         .font(SidebarFont.font(size: CGFloat(settings.sidebarFontSize)))
-                        .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
+                        .foregroundStyle(MTermTheme.text)
                         .lineLimit(1)
                 }
                 // Sessions nested under a workspace folder omit the directory
@@ -461,7 +481,8 @@ private struct SessionSidebarRow: View {
                 workspace.close(session)
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, sidebarRowInset + (isNested ? 12 : 0))
+        .padding(.trailing, sidebarRowInset)
         .padding(.vertical, 8)
         .background(isSelected ? MTermTheme.rowSelected : .clear)
         .overlay(alignment: .leading) {
@@ -471,13 +492,11 @@ private struct SessionSidebarRow: View {
                 .padding(.vertical, 4)
                 .opacity(isSelected ? 1 : 0)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
         .background(GeometryReader { g in
             Color.clear.onAppear { rowHeight = g.size.height }
         })
         .overlay(alignment: .top) { insertionLine(visible: isTarget(after: false)) }
         .overlay(alignment: .bottom) { insertionLine(visible: isTarget(after: true)) }
-        .padding(.leading, isNested ? 12 : 0)
         .opacity(workspace.draggedSessionID == session.id ? 0.4 : 1)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -569,7 +588,8 @@ private struct SessionSidebarRow: View {
         RoundedRectangle(cornerRadius: 1)
             .fill(MTermTheme.accent)
             .frame(height: 2)
-            .padding(.horizontal, 10)
+            .padding(.leading, sidebarRowInset + (isNested ? 12 : 0))
+            .padding(.trailing, sidebarRowInset)
             .opacity(visible ? 1 : 0)
     }
 }
