@@ -468,11 +468,6 @@ private struct SessionSidebarRow: View {
             if let pullRequest = pullRequests.pullRequests[session.id] {
                 PullRequestBadge(pullRequest: pullRequest)
             }
-            if workspace.agentWorkingSessionIDs.contains(session.id) {
-                WanderSpinner(size: 11, color: .white)
-                    .frame(width: 16, height: 16)
-                    .accessibilityLabel("Agent is working")
-            }
             SidebarIconButton(
                 systemName: "xmark",
                 help: "Close \(displayTitle)",
@@ -486,18 +481,24 @@ private struct SessionSidebarRow: View {
         .padding(.vertical, 8)
         .background(isSelected ? MTermTheme.rowSelected : .clear)
         .overlay(alignment: .leading) {
-            if workspace.agentAttentionSessionIDs.contains(session.id) {
-                // Drawn in the leading gap so the agent icon and title keep
-                // their columns.
-                Image(systemName: "bell.fill")
-                    .font(.system(
-                        size: CGFloat(max(8, settings.sidebarFontSize - 3)),
-                        weight: .semibold))
-                    .foregroundStyle(MTermTheme.agentAttention)
-                    .frame(width: 12)
-                    .offset(x: sidebarRowInset + (isNested ? 12 : 0) - 16)
-                    .accessibilityLabel("Agent needs attention")
+            // The working spinner and the attention bell share the leading gap
+            // so the agent icon and title keep their columns.
+            Group {
+                if workspace.agentWorkingSessionIDs.contains(session.id) {
+                    WanderSpinner(size: 10, color: .white)
+                        .frame(width: 12, height: 12)
+                        .accessibilityLabel("Agent is working")
+                } else if workspace.agentAttentionSessionIDs.contains(session.id) {
+                    Image(systemName: "bell.fill")
+                        .font(.system(
+                            size: CGFloat(max(8, settings.sidebarFontSize - 3)),
+                            weight: .semibold))
+                        .foregroundStyle(MTermTheme.agentAttention)
+                        .frame(width: 12)
+                        .accessibilityLabel("Agent needs attention")
+                }
             }
+            .offset(x: sidebarRowInset + (isNested ? 12 : 0) - 16)
         }
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 1)
