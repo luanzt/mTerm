@@ -465,7 +465,9 @@ private struct SessionSidebarRow: View {
                 }
             }
             Spacer()
-            if let pullRequest = pullRequests.pullRequests[session.id] {
+            // Only a session open in a pane shows its PR; parked sessions in
+            // the same checkout would otherwise all repeat the same badge.
+            if isVisibleInWorkview, let pullRequest = pullRequests.pullRequests[session.id] {
                 PullRequestBadge(pullRequest: pullRequest)
             }
             SidebarIconButton(
@@ -1108,6 +1110,7 @@ private struct TerminalPane: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var terminalProcesses: TerminalProcessRegistry
     @EnvironmentObject private var remoteControl: RemoteControl
+    @EnvironmentObject private var pullRequests: SessionPullRequestStore
     let session: SessionRecord
     let isVisible: Bool
     @State private var dropZone: DropZone?
@@ -1136,6 +1139,9 @@ private struct TerminalPane: View {
                                      for: session.id),
                                  onForeground: {
                                      workspace.setForeground(session.id, command: $0)
+                                     // A finished command may have switched
+                                     // branches (git switch, gh pr checkout).
+                                     if $0 == nil { pullRequests.checkBranch(of: session.id) }
                                  },
                                  onTitleChange: {
                                      workspace.setAgentTitle(session.id, title: $0)

@@ -80,6 +80,41 @@ final class SessionPullRequestTests: XCTestCase {
     }
 
     @MainActor
+    func testBranchSwitchReplacesBadgeAndUnchangedBranchSkipsGitHub() async throws {
+        let url = URL(string: "https://github.com/o/r/pull/1")!
+        let first = SessionPullRequest(number: 1, state: .open, url: url)
+        let second = SessionPullRequest(number: 2, state: .draft, url: url)
+        var branch = "feature/a"
+        var outcome = PullRequestLookup.Outcome.found(first)
+        var lookups = 0
+        let store = SessionPullRequestStore(
+            lookup: { _ in lookups += 1; return outcome },
+            currentBranch: { _ in branch })
+        let session = SessionRecord.shell(workingDirectory: "/repo")
+
+        store.sessionsChanged([session])
+        try await waitUntil { store.pullRequests[session.id] == first }
+        store.checkBranch(of: session.id)
+        try await waitUntil { lookups == 2 }
+
+        store.checkBranch(of: session.id)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(lookups, 2, "Same branch must not spawn gh")
+        XCTAssertEqual(store.pullRequests[session.id], first)
+
+        branch = "feature/b"
+        outcome = .unavailable
+        store.checkBranch(of: session.id)
+        try await waitUntil { lookups == 3 }
+        XCTAssertNil(store.pullRequests[session.id], "The old branch's PR is dropped even offline")
+
+        outcome = .found(second)
+        branch = "feature/c"
+        store.checkBranch(of: session.id)
+        try await waitUntil { store.pullRequests[session.id] == second }
+    }
+
+    @MainActor
     private func waitUntil(_ condition: () -> Bool) async throws {
         for _ in 0..<100 where !condition() {
             try await Task.sleep(nanoseconds: 10_000_000)

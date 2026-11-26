@@ -74,18 +74,33 @@ enum PullRequestLookup {
         return error.contains("no pull requests found") ? .none : .unavailable
     }
 
+    /// The checked-out branch, `""` when HEAD is detached or the directory is
+    /// not a repository, or nil without `gh` (no badge could change anyway).
+    static func currentBranch(in directory: String) async -> String? {
+        await Task.detached(priority: .utility) { () -> String? in
+            guard executable(named: "gh") != nil else { return nil }
+            let git = executable(named: "git") ?? URL(fileURLWithPath: "/usr/bin/git")
+            return headBranch(in: directory, git: git) ?? ""
+        }.value
+    }
+
     /// The checked-out branch, unless HEAD is detached or on a trunk branch.
     static func featureBranch(in directory: String, git: URL) -> String? {
-        let head = run(git, ["symbolic-ref", "--quiet", "--short", "HEAD"], in: directory)
-        guard head.status == 0 else { return nil }
-        let branch = String(decoding: head.output, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !branch.isEmpty, !trunkBranches.contains(branch) else { return nil }
+        guard let branch = headBranch(in: directory, git: git),
+              !trunkBranches.contains(branch) else { return nil }
         let remoteHead = run(git, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
                              in: directory)
         let defaultBranch = String(decoding: remoteHead.output, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return defaultBranch == "origin/\(branch)" ? nil : branch
+    }
+
+    private static func headBranch(in directory: String, git: URL) -> String? {
+        let head = run(git, ["symbolic-ref", "--quiet", "--short", "HEAD"], in: directory)
+        guard head.status == 0 else { return nil }
+        let branch = String(decoding: head.output, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return branch.isEmpty ? nil : branch
     }
 
     private static func executable(named name: String) -> URL? {
@@ -138,8 +153,9 @@ enum PullRequestLookup {
 
 /// Keeps each session's pull request current. Lookups run per working
 /// directory when a session appears or changes directory, when it is selected,
-/// when its agent finishes a turn (the turn may have just opened the PR), and
-/// on a slow timer so a merge shows up without any interaction.
+/// when its agent finishes a turn (the turn may have just opened the PR), when
+/// a shell command leaves the checkout on another branch, and on a slow timer
+/// so a merge shows up without any interaction.
 @MainActor
 final class SessionPullRequestStore: ObservableObject {
     @Published private(set) var pullRequests: [SessionRecord.ID: SessionPullRequest] = [:]
@@ -151,12 +167,21 @@ final class SessionPullRequestStore: ObservableObject {
     private var directories: [SessionRecord.ID: String] = [:]
     private var inFlight: Set<String> = []
     private var lastChecked: [String: Date] = [:]
+    /// Last branch read per directory, so a finished shell command only costs
+    /// a `git symbolic-ref` unless it actually switched branches.
+    private var branches: [String: String] = [:]
+    private var branchChecks: Set<String> = []
     private var cancellables: Set<AnyCancellable> = []
     private var timer: Timer?
     private let lookup: (String) async -> PullRequestLookup.Outcome
+    private let currentBranch: (String) async -> String?
 
-    init(lookup: @escaping (String) async -> PullRequestLookup.Outcome = PullRequestLookup.pullRequest(in:)) {
+    init(
+        lookup: @escaping (String) async -> PullRequestLookup.Outcome = PullRequestLookup.pullRequest(in:),
+        currentBranch: @escaping (String) async -> String? = PullRequestLookup.currentBranch(in:)
+    ) {
         self.lookup = lookup
+        self.currentBranch = currentBranch
     }
 
     func attach(to workspace: WorkspaceStore) {
@@ -205,6 +230,26 @@ final class SessionPullRequestStore: ObservableObject {
                 let outcome = await lookup(directory)
                 apply(outcome, to: directory)
             }
+        }
+    }
+
+    /// Re-reads the session's branch after a shell command finishes. A switch
+    /// drops the old branch's badge at once, then looks up the new branch's PR.
+    func checkBranch(of id: SessionRecord.ID) {
+        guard let directory = directories[id], !branchChecks.contains(directory) else { return }
+        branchChecks.insert(directory)
+        Task {
+            let branch = await currentBranch(directory)
+            branchChecks.remove(directory)
+            guard let branch, branches[directory] != branch else { return }
+            let previous = branches.updateValue(branch, forKey: directory)
+            let ids = directories.filter { $0.value == directory }.map(\.key)
+            // The first reading only learns the branch; the badge from the
+            // initial lookup is still right unless the lookup disagrees.
+            if previous != nil {
+                for id in ids where pullRequests[id] != nil { pullRequests[id] = nil }
+            }
+            refresh(ids)
         }
     }
 
