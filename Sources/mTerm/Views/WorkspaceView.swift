@@ -489,6 +489,7 @@ private struct SessionSidebarRow: View {
                 if workspace.agentWorkingSessionIDs.contains(session.id) {
                     WanderSpinner(size: 10, color: .white)
                         .frame(width: 12, height: 12)
+                        .offset(x: -5)
                         .accessibilityLabel("Agent is working")
                 } else if workspace.agentAttentionSessionIDs.contains(session.id) {
                     Image(systemName: "bell.fill")
