@@ -427,6 +427,9 @@ private struct SessionSidebarRow: View {
     private var isSelected: Bool { session.id == workspace.selectedSessionID }
     private var isVisibleInWorkview: Bool { workspace.grid.paneIDs.contains(session.id) }
     private var displayTitle: String { workspace.displayTitle(for: session) }
+    /// Loose open sessions sit 10pt in too, so the spinner/bell in the
+    /// leading gap stays clear of the sidebar edge.
+    private var leadingInset: CGFloat { sidebarRowInset + (isNested ? 12 : 10) }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -478,7 +481,7 @@ private struct SessionSidebarRow: View {
                 workspace.close(session)
             }
         }
-        .padding(.leading, sidebarRowInset + (isNested ? 12 : 0))
+        .padding(.leading, leadingInset)
         .padding(.trailing, sidebarRowInset)
         .padding(.vertical, 8)
         .background(isSelected ? MTermTheme.rowSelected : .clear)
@@ -501,7 +504,7 @@ private struct SessionSidebarRow: View {
                         .accessibilityLabel("Agent needs attention")
                 }
             }
-            .offset(x: sidebarRowInset + (isNested ? 12 : 0) - 16)
+            .offset(x: leadingInset - 16)
         }
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 1)
@@ -606,7 +609,7 @@ private struct SessionSidebarRow: View {
         RoundedRectangle(cornerRadius: 1)
             .fill(MTermTheme.accent)
             .frame(height: 2)
-            .padding(.leading, sidebarRowInset + (isNested ? 12 : 0))
+            .padding(.leading, leadingInset)
             .padding(.trailing, sidebarRowInset)
             .opacity(visible ? 1 : 0)
     }
