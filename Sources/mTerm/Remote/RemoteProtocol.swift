@@ -27,9 +27,9 @@ import Network
 import Security
 
 public enum RemoteProtocol {
-    /// v3: `commands` and `upload`, which a v2 Mac rejects as unrecognized,
-    /// leaving the composer's menu empty and its uploads spinning.
-    public static let version = 3
+    /// v4: `terminate`, which a v3 Mac rejects as unrecognized, leaving the
+    /// client's close-terminal action silently doing nothing.
+    public static let version = 4
     /// Below macOS's ephemeral range (49152–65535): any app's outgoing
     /// connection can hold an ephemeral port and block the listener's bind.
     public static let defaultPort: UInt16 = 47_741
@@ -239,6 +239,9 @@ public enum RemoteClientMessage: Equatable, Sendable {
     /// client-chosen `session` ID. The client opens it: the shell starts at
     /// `grid` and the session is driven by this client.
     case create(session: UUID, workspaceID: UUID?, grid: RemoteGrid)
+    /// End the terminal on the Mac, like its pane's close button. The host
+    /// answers by dropping it from the catalog and sending `closed`.
+    case terminate(session: UUID)
     /// Keyboard bytes. Input is a real action: the host claims the session
     /// for this client before writing the bytes to the PTY.
     case input(session: UUID, data: Data)
@@ -273,6 +276,8 @@ public enum RemoteClientMessage: Equatable, Sendable {
             return .text(ControlEnvelope(
                 type: "create", session: session,
                 columns: grid.columns, rows: grid.rows, workspace: workspaceID).json())
+        case .terminate(let session):
+            return .text(ControlEnvelope(type: "terminate", session: session).json())
         case .input(let session, let data):
             return .binary(BinaryFrame.encode(kind: BinaryFrame.input, session: session, payload: data))
         case .commands(let session):
@@ -340,6 +345,9 @@ public enum RemoteClientMessage: Equatable, Sendable {
             case "create":
                 guard let session = envelope.session, let grid = envelope.grid else { return nil }
                 self = .create(session: session, workspaceID: envelope.workspace, grid: grid)
+            case "terminate":
+                guard let session = envelope.session else { return nil }
+                self = .terminate(session: session)
             case "commands":
                 guard let session = envelope.session else { return nil }
                 self = .commands(session: session)

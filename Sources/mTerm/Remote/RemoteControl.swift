@@ -429,6 +429,15 @@ final class RemoteControl: ObservableObject, RemoteServerDelegate {
             clients[connection]?.sessions.insert(session)
             updateRemoteDrivers()
             publishCatalogIfChanged()
+        case .terminate(let session):
+            guard let workspace, let record = workspace.session(for: session) else {
+                server.send(.closed(session: session), to: connection)
+                return
+            }
+            // Same as the pane's close button; the catalog publish then sends
+            // `closed` to every subscriber.
+            workspace.close(record)
+            publishCatalogIfChanged()
         case .input(let session, let data):
             guard let view = terminal(for: session) else { return }
             apply(ownership.act(client: clientID, session: session), to: session)

@@ -329,6 +329,13 @@ final class RemoteControlEndToEndTests: XCTestCase {
             client.messages.contains { if case .error(let code, _) = $0 { return code == "create_failed" }; return false }
         }
 
+        client.send(.terminate(session: created))
+        waitUntil("terminated session closed") {
+            client.messages.contains { if case .closed(let session) = $0 { return session == created }; return false }
+        }
+        XCTAssertNil(workspace.session(for: created))
+        XCTAssertNil(control.remoteDrivers[created])
+
         client.connection.cancel()
         control.setEnabled(false)
     }
