@@ -533,6 +533,37 @@ final class WorkspaceStore: ObservableObject {
         agentAttentionSessionIDs.insert(id)
     }
 
+    /// An agent the sidebar's Agents view counts: waiting on the user,
+    /// working, or finished a turn the user has not looked at yet.
+    func agentNeedsLook(_ id: SessionRecord.ID) -> Bool {
+        agentAwaitingSessionIDs.contains(id)
+            || agentWorkingSessionIDs.contains(id)
+            || agentAttentionSessionIDs.contains(id)
+    }
+
+    /// The sidebar's Agents view: waiting on the user, then working, then
+    /// finished and unseen, then idle agents; sidebar order (loose sessions,
+    /// then each workspace folder) within each group. Plain terminals are
+    /// left out.
+    var agentSidebarSessions: [SessionRecord] {
+        func rank(_ id: SessionRecord.ID) -> Int? {
+            if agentAwaitingSessionIDs.contains(id) { return 0 }
+            if agentWorkingSessionIDs.contains(id) { return 1 }
+            if agentAttentionSessionIDs.contains(id) { return 2 }
+            if claudeSessionIDs.contains(id) || codexSessionIDs.contains(id) || ompSessionIDs.contains(id) {
+                return 3
+            }
+            return nil
+        }
+        let sidebarOrder = sessions.filter { $0.workspaceID == nil }
+            + workspaces.flatMap { folder in sessions.filter { $0.workspaceID == folder.id } }
+        return sidebarOrder
+            .enumerated()
+            .compactMap { index, session in rank(session.id).map { ($0, index, session) } }
+            .sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+            .map(\.2)
+    }
+
     func setAgentTitle(_ id: SessionRecord.ID, title rawTitle: String) {
         guard session(for: id) != nil else { return }
 

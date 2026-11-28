@@ -79,9 +79,17 @@ struct SidebarToggleButton: View {
 private let sidebarInset: CGFloat = 12
 private let sidebarRowInset: CGFloat = sidebarInset + 10
 
+/// What the sidebar lists: every session grouped as on the Mac, or only the
+/// agent sessions, ordered by what needs a look.
+enum SidebarMode: String {
+    case all
+    case agents
+}
+
 private struct WorkspaceSidebar: View {
     @EnvironmentObject private var workspace: WorkspaceStore
     @EnvironmentObject private var settings: AppSettings
+    @AppStorage("mterm.sidebar.mode") private var mode: SidebarMode = .all
     @State private var collapsedFolders: Set<WorkspaceFolder.ID> = []
     @State private var folderDropTarget: FolderDropTarget?
     @State private var sessionDropTarget: SessionDropTarget?
@@ -90,41 +98,49 @@ private struct WorkspaceSidebar: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    sidebarAction("New terminal", icon: "plus") {
-                        workspace.createSession(asNewPane:
-                            settings.opensNewTerminalsInSplit
-                                || NSEvent.modifierFlags.contains(.command))
-                    }
-                    sidebarSection("OPEN SESSIONS") {
-                        ForEach(workspace.sessions.filter { $0.workspaceID == nil }) { session in
-                            SessionSidebarRow(session: session, dropTarget: $sessionDropTarget)
+                    VStack(spacing: 8) {
+                        sidebarAction("New terminal", icon: "plus") {
+                            workspace.createSession(asNewPane:
+                                settings.opensNewTerminalsInSplit
+                                    || NSEvent.modifierFlags.contains(.command))
                         }
+                        modePicker
                     }
-                    sidebarSection("WORKSPACES", accessory: {
-                        SidebarIconButton(
-                            systemName: "plus",
-                            help: "Add a workspace folder"
-                        ) {
-                            workspace.chooseWorkspace()
+                    switch mode {
+                    case .all:
+                        sidebarSection("OPEN SESSIONS") {
+                            ForEach(workspace.sessions.filter { $0.workspaceID == nil }) { session in
+                                SessionSidebarRow(session: session, dropTarget: $sessionDropTarget)
+                            }
                         }
-                    }) {
-                        ForEach(workspace.workspaces) { folder in
-                            let children = workspace.sessions.filter { $0.workspaceID == folder.id }
-                            let isExpanded = !collapsedFolders.contains(folder.id)
-                            WorkspaceFolderRow(folder: folder,
-                                               hasChildren: !children.isEmpty,
-                                               isExpanded: isExpanded,
-                                               count: children.count,
-                                               onToggle: { toggle(folder) },
-                                               dropTarget: $folderDropTarget)
-                            if isExpanded {
-                                ForEach(children) { session in
-                                    SessionSidebarRow(session: session,
-                                                      isNested: true,
-                                                      dropTarget: $sessionDropTarget)
+                        sidebarSection("WORKSPACES", accessory: {
+                            SidebarIconButton(
+                                systemName: "plus",
+                                help: "Add a workspace folder"
+                            ) {
+                                workspace.chooseWorkspace()
+                            }
+                        }) {
+                            ForEach(workspace.workspaces) { folder in
+                                let children = workspace.sessions.filter { $0.workspaceID == folder.id }
+                                let isExpanded = !collapsedFolders.contains(folder.id)
+                                WorkspaceFolderRow(folder: folder,
+                                                   hasChildren: !children.isEmpty,
+                                                   isExpanded: isExpanded,
+                                                   count: children.count,
+                                                   onToggle: { toggle(folder) },
+                                                   dropTarget: $folderDropTarget)
+                                if isExpanded {
+                                    ForEach(children) { session in
+                                        SessionSidebarRow(session: session,
+                                                          isNested: true,
+                                                          dropTarget: $sessionDropTarget)
+                                    }
                                 }
                             }
                         }
+                    case .agents:
+                        agentList
                     }
                 }
                 .padding(.top, 8)
@@ -132,6 +148,82 @@ private struct WorkspaceSidebar: View {
             }
         }
         .background(MTermTheme.sidebar)
+    }
+
+    /// Flat, without folder names or directories: which agent needs a look
+    /// matters here, not where it lives. Its order is computed, so rows
+    /// cannot be reordered; they can still be dragged onto a pane.
+    @ViewBuilder
+    private var agentList: some View {
+        let agents = workspace.agentSidebarSessions
+        if agents.isEmpty {
+            Text("No agents running")
+                .font(SidebarFont.font(size: CGFloat(max(9, settings.sidebarFontSize - 1))))
+                .foregroundStyle(MTermTheme.dim2)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(agents) { session in
+                    SessionSidebarRow(session: session,
+                                      isNested: true,
+                                      allowsReorder: false,
+                                      dropTarget: $sessionDropTarget)
+                }
+            }
+        }
+    }
+
+    private var modePicker: some View {
+        // Idle agents are listed but not counted: the badge is what needs a look.
+        let count = workspace.agentSidebarSessions.filter { workspace.agentNeedsLook($0.id) }.count
+        return HStack(spacing: 2) {
+            modeSegment(.all, title: "All", count: 0)
+            modeSegment(.agents, title: "Agents", count: count)
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(MTermTheme.control)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(MTermTheme.controlBorder, lineWidth: 1)))
+        .padding(.horizontal, sidebarInset)
+    }
+
+    private func modeSegment(_ value: SidebarMode, title: String, count: Int) -> some View {
+        let isSelected = mode == value
+        let hasUnseen = !workspace.agentAttentionSessionIDs.isEmpty
+        return Button {
+            mode = value
+        } label: {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(SidebarFont.font(
+                        size: CGFloat(max(9, settings.sidebarFontSize - 1)),
+                        weight: .semibold))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(
+                            size: CGFloat(max(8, settings.sidebarFontSize - 3)),
+                            weight: .bold).monospacedDigit())
+                        .foregroundStyle(hasUnseen ? MTermTheme.sidebar : MTermTheme.text)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 16, minHeight: 15)
+                        .background(
+                            Capsule().fill(hasUnseen ? MTermTheme.agentAttention : MTermTheme.controlBorder))
+                }
+            }
+            .foregroundStyle(isSelected ? MTermTheme.text : MTermTheme.dim)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected ? MTermTheme.rowSelected : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func toggle(_ folder: WorkspaceFolder) {
@@ -418,6 +510,9 @@ private struct SessionSidebarRow: View {
     @EnvironmentObject private var pullRequests: SessionPullRequestStore
     let session: SessionRecord
     var isNested = false
+    /// Off where the order is computed (the Agents view): the row can still
+    /// be dragged onto a pane, but never dropped to reorder.
+    var allowsReorder = true
     @Binding var dropTarget: SessionDropTarget?
     @State private var rowHeight: CGFloat = 36
     @State private var isRenaming = false
@@ -545,6 +640,7 @@ private struct SessionSidebarRow: View {
         .onDrop(of: [.text], delegate: SessionReorderDropDelegate(
             targetID: session.id,
             rowHeight: rowHeight,
+            allowsReorder: allowsReorder,
             dropTarget: $dropTarget,
             workspace: workspace))
         .contextMenu {
@@ -622,11 +718,13 @@ private struct SessionSidebarRow: View {
 private struct SessionReorderDropDelegate: DropDelegate {
     let targetID: SessionRecord.ID
     let rowHeight: CGFloat
+    let allowsReorder: Bool
     @Binding var dropTarget: SessionDropTarget?
     let workspace: WorkspaceStore
 
     func validateDrop(info: DropInfo) -> Bool {
-        guard workspace.draggedPaneSessionID == nil,
+        guard allowsReorder,
+              workspace.draggedPaneSessionID == nil,
               let dragged = workspace.draggedSessionID else { return false }
         return dragged != targetID && sameSection(dragged)
     }
@@ -656,7 +754,8 @@ private struct SessionReorderDropDelegate: DropDelegate {
     }
 
     private func update(_ info: DropInfo) {
-        guard workspace.draggedPaneSessionID == nil,
+        guard allowsReorder,
+              workspace.draggedPaneSessionID == nil,
               let dragged = workspace.draggedSessionID,
               dragged != targetID, sameSection(dragged) else {
             dropTarget = nil

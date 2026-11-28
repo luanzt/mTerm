@@ -830,6 +830,33 @@ final class WorkspaceStoreTests: XCTestCase {
         XCTAssertFalse(store.agentAttentionSessionIDs.contains(background.id))
     }
 
+    func testAgentSidebarListsAgentsByWhatNeedsALook() {
+        let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        let plain = store.sessions[0].id
+        var ids: [SessionRecord.ID] = []
+        for _ in 0..<4 {
+            store.createSession()
+            ids.append(store.sessions.last!.id)
+        }
+        let (idle, working, awaiting, finished) = (ids[0], ids[1], ids[2], ids[3])
+        store.selectedSessionID = plain
+        for id in ids {
+            store.setForeground(id, command: "omp")
+        }
+        store.setAgentTitle(working, title: "π ⠋ Building")
+        store.setAgentTitle(awaiting, title: "π ! Which branch?")
+        store.setAgentTitle(finished, title: "π ⠋ Fixing")
+        store.setAgentTitle(finished, title: "π > Fixing")
+
+        XCTAssertEqual(store.agentSidebarSessions.map(\.id), [awaiting, working, finished, idle])
+        XCTAssertEqual(ids.filter(store.agentNeedsLook), [working, awaiting, finished])
+
+        // Looking at the finished agent makes it an idle one, after the older idle agent.
+        store.selectedSessionID = finished
+        XCTAssertEqual(store.agentSidebarSessions.map(\.id), [awaiting, working, idle, finished])
+        XCTAssertFalse(store.agentNeedsLook(finished))
+    }
+
     func testClaudeAttentionDistinguishesCompletionFromInterruption() {
         let store = WorkspaceStore(defaults: UserDefaults(suiteName: UUID().uuidString)!)
         let background = store.sessions[0]
